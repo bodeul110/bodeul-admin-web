@@ -1,0 +1,56 @@
+name: Admin Web Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-build:
+    name: lint-and-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VITE_FIREBASE_API_KEY: ci-firebase-api-key
+      VITE_FIREBASE_AUTH_DOMAIN: bodeul-ci.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: bodeul-ci
+      VITE_FIREBASE_STORAGE_BUCKET: bodeul-ci.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      VITE_FIREBASE_APP_ID: "1:000000000000:web:0000000000000000000000"
+      VITE_FIREBASE_APPCHECK_SITE_KEY: ""
+      VITE_BODEUL_DATA_BACKEND: firebase
+      VITE_BODEUL_API_BASE_URL: http://127.0.0.1:8080
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # 실제 Firebase 프로젝트로 접속하지 않는 컴파일 검증용 placeholder 값만 사용한다.
+      - name: Build
+        run: npm run build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-web-dist
+          path: dist
+          retention-days: 7

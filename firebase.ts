@@ -18,7 +18,7 @@ function readRequiredEnv(name: RequiredFirebaseEnvKey): string {
   }
 
   throw new Error(
-    `관리자 웹 Firebase 설정값 ${name}이 비어 있습니다. admin-web/.env.local 또는 GitHub Environment 변수를 확인해 주세요.`,
+    `관리자 웹 Firebase 설정값 ${name}이 비어 있습니다. .env.local 또는 GitHub Environment 변수를 확인해 주세요.`,
   )
 }
 
