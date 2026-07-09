@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 원 저장소 문서 홈
+    url: https://github.com/bodeul110/Bodeul/blob/master/docs/README.md
+    about: 공통 아키텍처, 운영 기준, Firebase 계약 문서를 먼저 확인합니다.
+  - name: 관리자 웹 분리 계획
+    url: https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-repository-split.md
+    about: 원 저장소와 관리자 웹 저장소의 소유권 경계를 확인합니다.
+  - name: 내부 테스트 가이드
+    url: https://github.com/bodeul110/Bodeul/blob/master/docs/operations/internal-test-guide.md
+    about: 역할별 데모 계정과 테스트 흐름을 확인합니다.
