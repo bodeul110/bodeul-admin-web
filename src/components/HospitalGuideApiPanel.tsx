@@ -4,6 +4,7 @@ import type {User as FirebaseUser} from "firebase/auth";
 import {
   BodeulApiError,
   fetchAdminHospitalGuides,
+  validateBodeulApiBaseUrl,
   type BodeulDataBackend,
   type HospitalGuideItem,
 } from "../bodeulApi";
@@ -25,7 +26,11 @@ export function HospitalGuideApiPanel({
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [message, setMessage] = useState("");
   const isApiMode = dataBackend === "api";
-  const canLoad = Boolean(isApiMode && apiBaseUrl && currentUser);
+  const apiBaseUrlError = useMemo(
+      () => apiBaseUrl ? validateBodeulApiBaseUrl(apiBaseUrl) : null,
+      [apiBaseUrl],
+  );
+  const canLoad = Boolean(isApiMode && apiBaseUrl && !apiBaseUrlError && currentUser);
   const statusLabel = useMemo(() => {
     if (!isApiMode) {
       return "Firebase 모드";
@@ -33,8 +38,11 @@ export function HospitalGuideApiPanel({
     if (!apiBaseUrl) {
       return "API URL 미설정";
     }
+    if (apiBaseUrlError) {
+      return "API URL 오류";
+    }
     return "API 모드";
-  }, [apiBaseUrl, isApiMode]);
+  }, [apiBaseUrl, apiBaseUrlError, isApiMode]);
 
   const loadHospitalGuides = useCallback(async () => {
     if (!isApiMode) {
@@ -48,6 +56,13 @@ export function HospitalGuideApiPanel({
       setItems([]);
       setStatus("error");
       setMessage("VITE_BODEUL_API_BASE_URL이 설정되지 않았습니다.");
+      return;
+    }
+
+    if (apiBaseUrlError) {
+      setItems([]);
+      setStatus("error");
+      setMessage(apiBaseUrlError.message);
       return;
     }
 
@@ -71,8 +86,8 @@ export function HospitalGuideApiPanel({
       setStatus("error");
       setMessage(resolveApiErrorMessage(error));
     }
-  }, [apiBaseUrl, currentUser, isApiMode]);
-  const visibleMessage = message || resolveDefaultMessage(isApiMode, apiBaseUrl, currentUser);
+  }, [apiBaseUrl, apiBaseUrlError, currentUser, isApiMode]);
+  const visibleMessage = message || resolveDefaultMessage(isApiMode, apiBaseUrl, apiBaseUrlError, currentUser);
 
   return (
     <div className="space-y-4">
@@ -104,7 +119,9 @@ export function HospitalGuideApiPanel({
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">API Base URL</p>
           <p className="mt-2 break-all text-sm font-semibold text-gray-900">{apiBaseUrl || "미설정"}</p>
-          <p className="mt-1 text-xs text-gray-500">브라우저 호출 대상</p>
+          <p className="mt-1 text-xs text-gray-500">
+            {apiBaseUrlError ? apiBaseUrlError.message : "브라우저 호출 대상"}
+          </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">Result</p>
@@ -168,13 +185,22 @@ export function HospitalGuideApiPanel({
   );
 }
 
-function resolveDefaultMessage(isApiMode: boolean, apiBaseUrl: string, currentUser: FirebaseUser | null): string {
+function resolveDefaultMessage(
+    isApiMode: boolean,
+    apiBaseUrl: string,
+    apiBaseUrlError: BodeulApiError | null,
+    currentUser: FirebaseUser | null,
+): string {
   if (!isApiMode) {
     return "현재는 Firebase 모드입니다. API 전환 검증은 VITE_BODEUL_DATA_BACKEND=api에서 실행합니다.";
   }
 
   if (!apiBaseUrl) {
     return "VITE_BODEUL_API_BASE_URL이 설정되지 않았습니다.";
+  }
+
+  if (apiBaseUrlError) {
+    return apiBaseUrlError.message;
   }
 
   if (!currentUser) {

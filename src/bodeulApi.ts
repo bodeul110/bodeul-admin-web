@@ -46,13 +46,38 @@ export function resolveBodeulApiBaseUrl(env: AdminWebApiEnv = import.meta.env): 
   return trimTrailingSlash(env.VITE_BODEUL_API_BASE_URL?.trim() || "");
 }
 
+export function validateBodeulApiBaseUrl(baseUrl: string): BodeulApiError | null {
+  if (!baseUrl) {
+    return new BodeulApiError("api_base_url_missing", "관리자 API base URL이 설정되지 않았습니다.");
+  }
+
+  try {
+    const url = createBodeulApiUrl(baseUrl, "/");
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return new BodeulApiError("invalid_api_base_url", "관리자 API base URL은 http 또는 https URL이어야 합니다.");
+    }
+
+    if (url.protocol === "http:" && !isLocalHttpHost(url.hostname)) {
+      return new BodeulApiError(
+          "insecure_api_base_url",
+          "관리자 API base URL은 HTTPS여야 합니다. HTTP는 로컬 개발 주소에서만 사용할 수 있습니다.",
+      );
+    }
+  } catch {
+    return new BodeulApiError("invalid_api_base_url", "관리자 API base URL 형식이 올바르지 않습니다.");
+  }
+
+  return null;
+}
+
 export async function fetchAdminHospitalGuides(
     user: FirebaseUser,
     options: FetchHospitalGuidesOptions = {},
 ): Promise<HospitalGuidesPayload> {
   const baseUrl = trimTrailingSlash(options.baseUrl || resolveBodeulApiBaseUrl());
-  if (!baseUrl) {
-    throw new BodeulApiError("api_base_url_missing", "관리자 API base URL이 설정되지 않았습니다.");
+  const baseUrlError = validateBodeulApiBaseUrl(baseUrl);
+  if (baseUrlError) {
+    throw baseUrlError;
   }
 
   const limit = options.limit ?? 50;
@@ -89,6 +114,10 @@ function createBodeulApiUrl(baseUrl: string, path: string): URL {
   }
 
   return new URL(rawUrl);
+}
+
+function isLocalHttpHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
 }
 
 async function readJson(response: Response): Promise<unknown> {
