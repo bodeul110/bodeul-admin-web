@@ -57,7 +57,7 @@ export async function fetchAdminHospitalGuides(
 
   const limit = options.limit ?? 50;
   const token = await user.getIdToken();
-  const url = new URL(`${baseUrl}/admin/hospital-guides`);
+  const url = createBodeulApiUrl(baseUrl, "/admin/hospital-guides");
   url.searchParams.set("limit", String(limit));
 
   const response = await fetch(url, {
@@ -79,6 +79,16 @@ export async function fetchAdminHospitalGuides(
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/u, "");
+}
+
+function createBodeulApiUrl(baseUrl: string, path: string): URL {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const rawUrl = `${baseUrl}${normalizedPath}`;
+  if (baseUrl.startsWith("/")) {
+    return new URL(rawUrl, window.location.origin);
+  }
+
+  return new URL(rawUrl);
 }
 
 async function readJson(response: Response): Promise<unknown> {
