@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/bodeul-api/:path*",
-      "destination": "http://132.145.123.73:8080/:path*"
-    }
-  ]
-}
