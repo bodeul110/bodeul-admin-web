@@ -59,7 +59,7 @@ export function AdminAuthScreen({
               onChange={(event) => onPasswordChange(event.target.value)}
               required
               className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-              placeholder="bodeul1234"
+              placeholder="비밀번호 입력"
             />
           </div>
 

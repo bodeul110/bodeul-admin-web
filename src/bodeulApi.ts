@@ -1,5 +1,7 @@
 import type { User as FirebaseUser } from "firebase/auth";
 
+import {clientEnv} from "./clientEnv";
+
 export type BodeulDataBackend = "firebase" | "api";
 
 export type HospitalGuideItem = {
@@ -17,8 +19,8 @@ export type HospitalGuidesPayload = {
 };
 
 type AdminWebApiEnv = {
-  readonly VITE_BODEUL_DATA_BACKEND?: string;
-  readonly VITE_BODEUL_API_BASE_URL?: string;
+  readonly dataBackend?: string;
+  readonly apiBaseUrl?: string;
 };
 
 type FetchHospitalGuidesOptions = {
@@ -38,22 +40,23 @@ export class BodeulApiError extends Error {
   }
 }
 
-export function resolveBodeulDataBackend(env: AdminWebApiEnv = import.meta.env): BodeulDataBackend {
-  return env.VITE_BODEUL_DATA_BACKEND?.trim().toLowerCase() === "api" ? "api" : "firebase";
+export function resolveBodeulDataBackend(env: AdminWebApiEnv = {
+  dataBackend: clientEnv.bodeulDataBackend,
+}): BodeulDataBackend {
+  return env.dataBackend?.trim().toLowerCase() === "firebase" ? "firebase" : "api";
 }
 
-export function resolveBodeulApiBaseUrl(env: AdminWebApiEnv = import.meta.env): string {
-  return trimTrailingSlash(env.VITE_BODEUL_API_BASE_URL?.trim() || "");
+export function resolveBodeulApiBaseUrl(env: AdminWebApiEnv = {
+  apiBaseUrl: clientEnv.bodeulApiBaseUrl,
+}): string {
+  return trimTrailingSlash(env.apiBaseUrl?.trim() || "");
 }
 
 export async function fetchAdminHospitalGuides(
     user: FirebaseUser,
     options: FetchHospitalGuidesOptions = {},
 ): Promise<HospitalGuidesPayload> {
-  const baseUrl = trimTrailingSlash(options.baseUrl || resolveBodeulApiBaseUrl());
-  if (!baseUrl) {
-    throw new BodeulApiError("api_base_url_missing", "관리자 API base URL이 설정되지 않았습니다.");
-  }
+  const baseUrl = trimTrailingSlash(options.baseUrl ?? resolveBodeulApiBaseUrl());
 
   const limit = options.limit ?? 50;
   const token = await user.getIdToken();
@@ -83,12 +86,12 @@ function trimTrailingSlash(value: string): string {
 
 function createBodeulApiUrl(baseUrl: string, path: string): URL {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const rawUrl = `${baseUrl}${normalizedPath}`;
-  if (baseUrl.startsWith("/")) {
+  if (!baseUrl || baseUrl.startsWith("/")) {
+    const rawUrl = `${baseUrl}${normalizedPath}`;
     return new URL(rawUrl, window.location.origin);
   }
 
-  return new URL(rawUrl);
+  return new URL(`${baseUrl}${normalizedPath}`);
 }
 
 async function readJson(response: Response): Promise<unknown> {

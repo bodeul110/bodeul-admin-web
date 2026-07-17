@@ -1,162 +1,107 @@
 # 보들 관리자 웹
 
-이 저장소는 BoDeul 관리자 웹 UI 전용 저장소입니다. 매니저 서류 심사와 관리자 세션 검증을 담당하는 Vite + React 기반 관리자 도구를 관리합니다.
+보들 서비스의 매니저 서류 심사와 운영 상태 확인을 담당하는 관리자 전용 웹입니다. React UI는 유지하면서 Vite 정적 앱에서 Next.js로 단계 이전하고 있습니다.
 
-Android 앱, `bodeul-api`, Firestore/Storage Rules, Functions, 공통 운영 문서는 원 저장소 [bodeul110/Bodeul](https://github.com/bodeul110/Bodeul)에 유지합니다. 이 저장소는 관리자 웹 UI, 관리자 웹 전용 build/deploy workflow, 관리자 웹 Hosting 설정만 소유합니다.
+## 구성
+
+- Firebase Authentication으로 관리자 신원을 확인합니다.
+- Next.js 서버가 Firebase ID token을 다시 검증합니다.
+- PostgreSQL `app_users`의 `ADMIN` 역할로 관리자 권한을 판정합니다.
+- 관리자 전용 DB role로 Supabase PostgreSQL을 직접 조회합니다.
+- Android와 사용자 웹은 별도의 Spring Core API를 사용합니다.
+
+```mermaid
+flowchart LR
+    Browser["관리자 브라우저\nReact"] -->|"Firebase ID token"| Next["Vercel Next.js\n관리자 서버"]
+    Next -->|"token 서명·audience·만료 검증"| Auth["Firebase Auth"]
+    Next -->|"bodeul_admin_service\n조회 전용"| DB["Supabase PostgreSQL\n공용 DB"]
+    App["사용자·매니저 앱/웹"] --> Core["Spring Core API"]
+    Core --> DB
+```
+
+관리자 요청이 기존 Node API나 Spring Core API를 다시 거쳐 DB로 가는 proxy 체인은 만들지 않습니다.
 
 ## 현재 기능
 
 - Firebase Auth 기반 관리자 로그인
-- `users/{uid}.role == ADMIN` 관리자 권한 확인
-- 매니저 서류 심사 대상 목록 조회
+- 매니저 서류 심사 대상 조회
 - Firebase Storage 원본 파일 미리보기
-- 매니저 서류 승인/반려 저장
-- `VITE_BODEUL_DATA_BACKEND=api`일 때 병원 가이드 read API 검증
-- 목록 기본 마스킹
-- 15분 유휴 세션 자동 로그아웃
+- 매니저 서류 승인·반려
+- 병원 가이드 PostgreSQL read API 조회
+- 목록 기본 마스킹과 15분 유휴 세션 종료
 
 ## 기술 스택
 
-- React
-- TypeScript
-- Vite
-- Tailwind CSS
-- Firebase Authentication / Firestore / Storage
-- 선택적 `bodeul-api` read API
+| 구분 | 기술 |
+| --- | --- |
+| UI | React 19, TypeScript, Tailwind CSS |
+| 웹/서버 | Next.js 16 App Router, Vercel Functions |
+| 인증 | Firebase Authentication, Firebase Admin SDK |
+| 데이터 | Supabase PostgreSQL 17, `pg` |
+| rollback | Vite 8, Firebase Hosting preview |
+
+## 서버 API
+
+| Method | Path | 인증·인가 | 설명 |
+| --- | --- | --- | --- |
+| `GET` | `/admin/hospital-guides?limit=50` | Firebase ID token + PostgreSQL `ADMIN` | 병원 가이드 목록 조회 |
+
+`limit`은 1부터 100 사이의 정수만 허용합니다. 응답은 캐시하지 않으며 DB 장애는 `503`, 관리자 권한 부족은 `403`, 잘못된 token은 `401`로 구분합니다.
 
 ## 환경 설정
 
-Firebase Web config는 코드에 직접 넣지 않고 Vite 환경변수로 주입합니다. 로컬 실행 전 예시 파일을 복사해 값을 채웁니다.
+`.env.example`을 `.env.local`로 복사한 뒤 개발 환경값을 채웁니다.
 
 ```powershell
-cd D:\bodeul-admin-web
 Copy-Item .env.example .env.local
 ```
 
-필수 값:
+브라우저 공개값:
 
-| 이름 | 설명 |
-| --- | --- |
-| `VITE_FIREBASE_API_KEY` | Firebase Web API key |
-| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase Auth domain |
-| `VITE_FIREBASE_PROJECT_ID` | Firebase project id |
-| `VITE_FIREBASE_STORAGE_BUCKET` | Firebase Storage bucket |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase sender id |
-| `VITE_FIREBASE_APP_ID` | Firebase Web app id |
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+- `NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY` (선택)
 
-선택 값:
+서버 전용값:
 
-| 이름 | 설명 |
-| --- | --- |
-| `VITE_FIREBASE_APPCHECK_SITE_KEY` | App Check reCAPTCHA v3 site key |
-| `VITE_FIREBASE_APPCHECK_DEBUG_TOKEN` | 로컬/CI 검증용 App Check debug token |
-| `VITE_BODEUL_DATA_BACKEND` | `firebase` 또는 `api`. 기본값은 `firebase`이며, `api`일 때 병원 가이드 검증 화면에서 `bodeul-api`를 호출한다. |
-| `VITE_BODEUL_API_BASE_URL` | `bodeul-api` base URL. 예: `http://127.0.0.1:8080` |
+- `FIREBASE_PROJECT_ID`
+- `ADMIN_DATABASE_URL`
 
-`.env.local`은 로컬 전용 파일이며 커밋하지 않습니다. GitHub Actions에서는 `admin-web-preview` Environment의 variables/secrets를 사용합니다.
+`ADMIN_DATABASE_URL`은 Supabase transaction pooler의 6543 포트와 `bodeul_admin_service`를 사용합니다. DB URL, 서비스 계정, App Check debug token은 브라우저 환경변수나 저장소에 넣지 않습니다.
 
-## bodeul-api 검증 모드
-
-병원 가이드 read API 연결을 확인하려면 관리자 웹과 `bodeul-api`를 함께 실행합니다.
+## 실행과 검증
 
 ```powershell
-$env:VITE_BODEUL_DATA_BACKEND = "api"
-$env:VITE_BODEUL_API_BASE_URL = "http://127.0.0.1:8080"
-npm run dev
-```
-
-API 서버는 관리자 웹 origin을 허용해야 합니다. 로컬 기본 origin인 `http://localhost:5173`, `http://127.0.0.1:5173`은 기본 허용값입니다. 운영/preview 도메인은 API 서버의 `BODEUL_API_ALLOWED_ORIGINS`에 별도로 추가합니다.
-
-rollback은 `VITE_BODEUL_DATA_BACKEND=firebase`로 되돌리는 방식이다. 이때 병원 가이드 메뉴는 API를 호출하지 않고 기존 Firebase 기반 관리자 기능은 그대로 유지된다.
-
-환경별 API 전환값과 CORS 기준은 원 저장소의 [관리자 웹 API 환경변수와 CORS 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-api-environments.md)을 따른다.
-
-## 실행
-
-```powershell
-cd D:\bodeul-admin-web
 npm install
 npm run dev
-```
-
-기본 주소:
-
-- `http://localhost:5173`
-
-관리자 테스트 계정과 비밀번호는 공개 문서에 적지 않고 팀의 비밀 관리 경로에서 확인합니다.
-
-## 주요 파일
-
-- [firebase.ts](firebase.ts): Firebase 설정과 서비스 초기화
-- [src/bodeulApi.ts](src/bodeulApi.ts): `bodeul-api` 호출과 응답 검증
-- [src/App.tsx](src/App.tsx): 인증 상태, 매니저 목록 구독, 저장 액션, 화면 전환 조합
-- [src/components/AdminAuthScreen.tsx](src/components/AdminAuthScreen.tsx): 관리자 로그인 화면
-- [src/components/AdminShell.tsx](src/components/AdminShell.tsx): 관리자 웹 공통 레이아웃
-- [src/components/HospitalGuideApiPanel.tsx](src/components/HospitalGuideApiPanel.tsx): 병원 가이드 read API 검증 화면
-- [src/components/ManagerApprovalList.tsx](src/components/ManagerApprovalList.tsx): 매니저 심사 목록
-- [src/components/ManagerReviewModal.tsx](src/components/ManagerReviewModal.tsx): 서류 상세 심사 모달
-- [src/hooks/useAdminIdleSession.ts](src/hooks/useAdminIdleSession.ts): 15분 유휴 세션 종료
-- [src/hooks/useManagerDocumentPreviews.ts](src/hooks/useManagerDocumentPreviews.ts): Storage 원본 파일 미리보기 상태 관리
-- [src/appCheck.ts](src/appCheck.ts): 선택적 App Check 초기화
-- [src/vite-env.d.ts](src/vite-env.d.ts): Vite 환경변수 타입 선언
-- [vite.config.ts](vite.config.ts): 빌드와 vendor chunk 분리 설정
-
-## 검증
-
-```powershell
+npm run test
 npm run lint
 npm run build
 ```
 
-GitHub Actions에서도 같은 root 기준 명령을 사용합니다.
+기본 개발 주소는 `http://localhost:3000`입니다.
 
-## 배포와 preview 검증
-
-현재 저장소 기준의 관리자 웹 검증 경로는 두 갈래입니다.
-
-- 기본 build 검증은 `Admin Web Build` workflow가 담당하며, lint/build와 산출물 업로드만 수행합니다.
-- Firebase Hosting preview는 `Admin Web Preview Deploy` workflow가 담당하며, `admin-web-preview` Environment와 WIF 인증을 사용합니다.
-- #140/#123 댓글 기준으로 Oracle API, Supabase, Firebase Admin 인증, 로컬 관리자 웹 API 모드, 실제 병원 가이드 API 응답 비교가 통과했습니다. Vercel preview는 production target 생성 문제로 직접 완료 범위에서 제외됐고 후속 작업으로 분리합니다.
-
-production live 배포 기준은 #134에서 확정합니다. 따라서 이 문서의 배포 명령은 현재 저장소에서 검증 가능한 Firebase Hosting 경로를 설명하는 것이며, 최종 production 채널, custom domain, Auth domain, App Check enforcement, WIF live deploy 조건을 확정하지 않습니다.
-
-수동 preview 배포:
+Vite rollback 검증:
 
 ```powershell
-firebase hosting:channel:deploy admin-web-preview --project <firebase-project-id> --expires 7d
+npm run dev:vite
+npm run build:vite
 ```
 
-수동 live 배포:
+## 배포
 
-```powershell
-firebase deploy --only hosting --project <firebase-project-id>
-```
+- Vercel Preview: Next.js 관리자 웹과 서버 route의 기본 검증 경로
+- Firebase Hosting preview: Vite 정적 rollback 산출물 확인 경로
+- Production: 메인 저장소 [#134](https://github.com/bodeul110/Bodeul/issues/134)의 도메인·환경 분리 결정 후 활성화
 
-Hosting 설정은 루트 [firebase.json](firebase.json)의 `hosting` 블록을 기준으로 합니다. `dist`만 배포하며, `/assets/**`는 Vite 해시 파일이므로 길게 캐시하고 나머지 HTML/SPA 경로는 배포가 바로 반영되도록 no-cache로 둡니다.
+Vercel Preview에는 `ADMIN_DATABASE_URL`을 Sensitive 환경변수로 저장합니다. 운영 배포 전에 실제 관리자 token으로 `200`, 일반 사용자 token으로 `403`, token 없음으로 `401`을 확인합니다.
 
-Vercel preview를 후속 검증으로 사용할 때도 환경 변수 기준은 동일합니다. 이 검증은 production 전환이 아니라 팀원이 공유 가능한 preview URL에서 API 모드 화면을 확인하기 위한 범위로 제한합니다.
+## 저장소 경계
 
-| 값 | 기준 |
-| --- | --- |
-| `VITE_BODEUL_DATA_BACKEND` | API 검증 preview에서만 `api` |
-| `VITE_BODEUL_API_BASE_URL` | Oracle에 배포한 `bodeul-api` preview URL |
-| Firebase Web config | 관리자 웹 preview 환경의 값 |
-| API CORS | `BODEUL_API_ALLOWED_ORIGINS`에 Vercel preview origin 추가 |
+이 저장소는 관리자 웹 UI, Next.js 관리자 서버, 관리자 웹 CI·배포 설정을 소유합니다. Android, Spring Core API, PostgreSQL migration, Firebase Rules와 Functions, 공통 아키텍처 문서는 [bodeul110/Bodeul](https://github.com/bodeul110/Bodeul)에서 관리합니다.
 
-실패 시에는 `VITE_BODEUL_DATA_BACKEND=firebase`로 되돌려 기존 Firebase 기반 관리자 기능을 유지합니다.
-
-## 보안 메모
-
-- 관리자 계정으로만 로그인해야 합니다.
-- 목록 화면의 이메일과 전화번호는 기본 마스킹합니다.
-- 상세 심사 모달에서만 원문 정보를 확인합니다.
-- 15분 동안 활동이 없으면 자동 로그아웃합니다.
-- Firebase Web API key는 서버 비밀값은 아니지만, 레포와 환경 분리를 위해 GitHub Environment secret으로 관리합니다.
-- 관리자 권한 검증 절차는 원 저장소의 [관리자 권한 QA 체크리스트](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-access-qa-checklist.md)를 따릅니다.
-
-## 레포 분리 메모
-
-- 관리자 웹이 사용하는 Firebase 계약은 원 저장소의 [관리자 웹 데이터 계약](https://github.com/bodeul110/Bodeul/blob/master/docs/architecture/admin-web-data-contract.md)을 기준으로 확인합니다.
-- 별도 레포 분리 준비는 원 저장소의 [관리자 웹 레포 분리 준비 계획](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-repository-split.md)을 따릅니다.
-- 관리자 웹 GitHub Environment 기준은 원 저장소의 [관리자 웹 GitHub Environment 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md)을 따릅니다.
-- Firestore/Storage Rules 또는 Functions 계약 변경이 필요하면 [bodeul110/Bodeul](https://github.com/bodeul110/Bodeul)에 이슈와 PR을 함께 연결합니다.
+상세 운영 기준은 [Next.js 관리자 서버 전환 기록](docs/nextjs-admin-server.md)을 확인합니다.

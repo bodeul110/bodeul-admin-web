@@ -41,16 +41,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test server contract
+        run: npm run test
+
       - name: Lint
         run: npm run lint
 
       # 실제 Firebase 프로젝트로 접속하지 않는 컴파일 검증용 placeholder 값만 사용한다.
-      - name: Build
+      - name: Build Next.js
         run: npm run build
 
-      - name: Upload dist
+      - name: Build Vite rollback
+        run: npm run build:vite
+
+      - name: Upload Next.js build
         uses: actions/upload-artifact@v4
         with:
-          name: admin-web-dist
+          name: admin-web-next-build
+          path: |
+            .next
+            !.next/cache
+          include-hidden-files: true
+          retention-days: 7
+
+      - name: Upload Vite rollback build
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-web-vite-rollback-dist
           path: dist
           retention-days: 7
