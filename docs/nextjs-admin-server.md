@@ -13,7 +13,7 @@
 - Vercel Functions는 Supabase transaction pooler 6543 포트와 `bodeul_admin_service`를 사용한다.
 - Supabase가 제공하는 공개 Root CA로 인증서와 호스트명을 검증하며 TLS 검증을 끄지 않는다.
 - 쿼리는 이름 없는 parameterized query로 실행하고 pool 크기는 인스턴스당 1로 제한한다.
-- 기존 Vite 빌드와 Firebase Hosting preview는 rollback 경로로 유지한다.
+- 기존 Vite 빌드는 CI rollback 자산으로 유지하되 Firebase Hosting 배포 경로는 종료한다.
 
 ## 검토한 대안
 
@@ -85,7 +85,7 @@ Preview 배포 후:
 ## Rollback
 
 1. Vercel Preview 승격을 중단한다.
-2. `npm run build:vite` 산출물을 Firebase Hosting preview에서 확인한다.
+2. `npm run build:vite`로 rollback 산출물 생성이 가능한지 확인한다.
 3. 브라우저 데이터 모드는 `VITE_BODEUL_DATA_BACKEND=firebase`를 사용한다.
 4. 필요하면 `bodeul_admin_service`를 `NOLOGIN`으로 돌리고 Vercel `ADMIN_DATABASE_URL`을 제거한다.
 
