@@ -11,6 +11,7 @@
 - Firebase Admin SDK가 ID token의 서명, 발급자, audience, 만료를 검증한다.
 - PostgreSQL `app_users.firebase_uid`의 역할이 `ADMIN`일 때만 요청을 허용한다.
 - Vercel Functions는 Supabase transaction pooler 6543 포트와 `bodeul_admin_service`를 사용한다.
+- Vercel Functions는 Supabase Tokyo와 같은 `hnd1` 단일 리전에서 실행한다.
 - Supabase가 제공하는 공개 Root CA로 인증서와 호스트명을 검증하며 TLS 검증을 끄지 않는다.
 - 쿼리는 이름 없는 parameterized query로 실행하고 pool 크기는 인스턴스당 1로 제한한다.
 - 기존 Vite 빌드는 CI rollback 자산으로 유지하되 Firebase Hosting 배포 경로는 종료한다.
