@@ -71,7 +71,7 @@ Copy-Item .env.example .env.local
 - `FIREBASE_PROJECT_ID`
 - `ADMIN_DATABASE_URL`
 
-`ADMIN_DATABASE_URL`은 Supabase transaction pooler의 6543 포트와 `bodeul_admin_service`를 사용합니다. DB URL, 서비스 계정, App Check debug token은 브라우저 환경변수나 저장소에 넣지 않습니다.
+`ADMIN_DATABASE_URL`은 Supabase transaction pooler의 6543 포트와 `bodeul_admin_service`를 사용합니다. 서버는 Supabase 공개 Root CA로 인증서와 호스트명을 검증합니다. DB URL, 서비스 계정, App Check debug token은 브라우저 환경변수나 저장소에 넣지 않습니다.
 
 ## 실행과 검증
 
@@ -98,7 +98,7 @@ npm run build:vite
 - Firebase Hosting preview: Vite 정적 rollback 산출물 확인 경로
 - Production: 메인 저장소 [#134](https://github.com/bodeul110/Bodeul/issues/134)의 도메인·환경 분리 결정 후 활성화
 
-Vercel Preview에는 `ADMIN_DATABASE_URL`을 Sensitive 환경변수로 저장합니다. 운영 배포 전에 실제 관리자 token으로 `200`, 일반 사용자 token으로 `403`, token 없음으로 `401`을 확인합니다.
+Vercel Preview에는 `ADMIN_DATABASE_URL`을 Sensitive 환경변수로 저장합니다. 2026-07-17 Preview에서 실제 관리자 token `200`, 일반 사용자 token `403`, token 없음 `401`을 확인했습니다. Production에는 별도 결정 전까지 DB 자격 증명을 등록하지 않습니다.
 
 ## 저장소 경계
 
