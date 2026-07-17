@@ -19,9 +19,9 @@
 ## 배포 경계
 
 - Vercel Preview가 Next.js 관리자 웹과 서버 route의 기본 검증 경로다.
-- Firebase Hosting preview는 `admin-web-preview` Environment의 Vite rollback 검증에만 사용한다.
-- production live 배포는 원 저장소 이슈 #134 기준이 확정되기 전까지 추가하지 않는다.
-- Firebase Hosting 설정은 이 저장소의 `firebase.json`에서 rollback용 정적 산출물만 소유한다.
+- Vercel Functions는 Supabase Tokyo와 같은 `hnd1`에서 실행한다.
+- Vite rollback은 CI에서 `build:vite` 산출물 생성까지만 확인하고 별도 Hosting 배포 경로를 두지 않는다.
+- Vercel Production 자격 증명과 custom domain은 원 저장소 이슈 #134의 launch gate를 통과하기 전까지 추가하지 않는다.
 - Firestore Rules, Storage Rules, Functions는 원 저장소 `bodeul110/Bodeul`이 계속 소유한다.
 - `ADMIN_DATABASE_URL`과 Firebase 서버 설정은 Next.js 서버에서만 읽고 브라우저 환경변수로 노출하지 않는다.
 - 관리자 서버는 Spring Core API나 기존 Node API를 경유하지 않고 관리자 전용 DB role로 PostgreSQL을 직접 조회한다.
