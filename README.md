@@ -1,6 +1,6 @@
 # 보들 관리자 웹
 
-보들 서비스의 매니저 서류 심사와 운영 상태 확인을 담당하는 관리자 전용 웹입니다. React UI는 유지하면서 Vite 정적 앱에서 Next.js로 단계 이전하고 있습니다.
+보들 서비스의 매니저 서류 심사와 운영 상태 확인을 담당하는 관리자 전용 웹입니다. Next.js가 배포 source of truth이며 Vite 빌드는 코드 rollback 검증용으로만 유지합니다.
 
 ## 구성
 
@@ -38,7 +38,7 @@ flowchart LR
 | 웹/서버 | Next.js 16 App Router, Vercel Functions |
 | 인증 | Firebase Authentication, Firebase Admin SDK |
 | 데이터 | Supabase PostgreSQL 17, `pg` |
-| rollback | Vite 8, Firebase Hosting preview |
+| rollback | Vite 8 CI build |
 
 ## 서버 API
 
@@ -95,8 +95,8 @@ npm run build:vite
 ## 배포
 
 - Vercel Preview: Next.js 관리자 웹과 서버 route의 기본 검증 경로
-- Firebase Hosting preview: Vite 정적 rollback 산출물 확인 경로
-- Production: 메인 저장소 [#134](https://github.com/bodeul110/Bodeul/issues/134)의 도메인·환경 분리 결정 후 활성화
+- Vite rollback: CI에서 정적 산출물 생성까지만 확인하며 별도 Hosting에는 배포하지 않음
+- Vercel Production: 메인 저장소 [#134](https://github.com/bodeul110/Bodeul/issues/134)의 도메인·환경 분리 결정 후 운영 자격 증명과 custom domain 활성화
 
 Vercel Preview에는 `ADMIN_DATABASE_URL`을 Sensitive 환경변수로 저장합니다. 2026-07-17 Preview에서 실제 관리자 token `200`, 일반 사용자 token `403`, token 없음 `401`을 확인했습니다. Production에는 별도 결정 전까지 DB 자격 증명을 등록하지 않습니다.
 
