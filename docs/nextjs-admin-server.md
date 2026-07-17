@@ -11,6 +11,7 @@
 - Firebase Admin SDK가 ID token의 서명, 발급자, audience, 만료를 검증한다.
 - PostgreSQL `app_users.firebase_uid`의 역할이 `ADMIN`일 때만 요청을 허용한다.
 - Vercel Functions는 Supabase transaction pooler 6543 포트와 `bodeul_admin_service`를 사용한다.
+- Supabase가 제공하는 공개 Root CA로 인증서와 호스트명을 검증하며 TLS 검증을 끄지 않는다.
 - 쿼리는 이름 없는 parameterized query로 실행하고 pool 크기는 인스턴스당 1로 제한한다.
 - 기존 Vite 빌드와 Firebase Hosting preview는 rollback 경로로 유지한다.
 
@@ -49,7 +50,9 @@ Firebase ID token 검증은 privileged Firebase Admin API를 호출하지 않으
 - `bodeul.hospital_guides`: `SELECT`
 - `INSERT`, `UPDATE`, `DELETE`: 허용하지 않음
 
-DB password는 migration이나 문서에 넣지 않는다. 개발 DB role의 `LOGIN` 활성화와 비밀번호 회전은 Vercel Preview Sensitive 환경변수 반영과 같은 작업 단위로 수행한다.
+DB password는 migration이나 문서에 넣지 않는다. 개발 DB role의 `LOGIN` 활성화와 비밀번호 회전은 Vercel Preview Sensitive 환경변수 반영과 같은 작업 단위로 수행한다. 2026-07-17 기준으로 Preview 전용 자격 증명을 등록했으며 Production에는 `ADMIN_DATABASE_URL`을 등록하지 않았다.
+
+원격 PostgreSQL 연결은 [Supabase SSL configuration](https://supabase.com/docs/guides/platform/ssl-enforcement)에서 제공하는 `Supabase Root 2021 CA`를 사용한다. `rejectUnauthorized: false`나 인증서 검증 없는 연결은 허용하지 않는다.
 
 ## 검증 순서
 
@@ -68,6 +71,16 @@ Preview 배포 후:
 3. PostgreSQL `ADMIN` 역할 사용자 token: `200`
 4. 응답 `items`와 `limit`, 병원·진료과·단계 수 확인
 5. 브라우저 bundle과 Vercel build log에 DB URL이 노출되지 않았는지 확인
+
+### 2026-07-17 Preview 검증 결과
+
+- Preview deployment: `bodeul-admin-heyiu9xmh-wlsrjsals110.vercel.app`
+- token 없음: `401 missing_authorization`
+- PostgreSQL `PATIENT` 역할 token: `403 admin_role_required`
+- PostgreSQL `ADMIN` 역할 token: `200`, 병원 가이드 1건과 `limit=50` 확인
+- Supabase transaction pooler 연결: 공개 Root CA와 `rejectUnauthorized=true` 조합으로 성공
+- 검증용 Firebase 사용자 2명과 `app_users` 임시 역할 행은 검증 직후 삭제
+- `bodeul_admin_service`는 `SELECT` 전용 권한과 connection limit 5를 유지
 
 ## Rollback
 
