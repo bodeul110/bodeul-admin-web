@@ -95,6 +95,7 @@ npm run build:vite
 ## 배포
 
 - Vercel Preview: Next.js 관리자 웹과 서버 route의 기본 검증 경로
+- Vercel Functions region: Supabase Tokyo와 같은 `hnd1`
 - Vite rollback: CI에서 정적 산출물 생성까지만 확인하며 별도 Hosting에는 배포하지 않음
 - Vercel Production: 메인 저장소 [#134](https://github.com/bodeul110/Bodeul/issues/134)의 도메인·환경 분리 결정 후 운영 자격 증명과 custom domain 활성화
 
