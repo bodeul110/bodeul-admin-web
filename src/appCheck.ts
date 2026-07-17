@@ -1,5 +1,6 @@
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
 import { app } from '../firebase'
+import { clientEnv } from './clientEnv'
 
 type AppCheckWindow = Window & typeof globalThis & {
   FIREBASE_APPCHECK_DEBUG_TOKEN?: string | boolean
@@ -12,7 +13,7 @@ export function initializeFirebaseAppCheck() {
     return
   }
 
-  const siteKey = readEnv('VITE_FIREBASE_APPCHECK_SITE_KEY')
+  const siteKey = clientEnv.firebaseAppCheckSiteKey
   if (!siteKey) {
     console.warn('[AppCheck] 사이트 키가 없어 관리자 웹 App Check 초기화를 건너뜁니다.')
     return
@@ -31,12 +32,12 @@ export function initializeFirebaseAppCheck() {
 }
 
 function resolveDebugToken(): string | boolean | undefined {
-  const configuredToken = readEnv('VITE_FIREBASE_APPCHECK_DEBUG_TOKEN')
+  const configuredToken = clientEnv.firebaseAppCheckDebugToken
   if (configuredToken) {
     return configuredToken
   }
 
-  if (import.meta.env.DEV && isLocalhost()) {
+  if (clientEnv.isDevelopment && isLocalhost()) {
     return true
   }
 
@@ -46,9 +47,4 @@ function resolveDebugToken(): string | boolean | undefined {
 function isLocalhost(): boolean {
   return window.location.hostname === 'localhost'
     || window.location.hostname === '127.0.0.1'
-}
-
-function readEnv(name: string): string {
-  const value = import.meta.env[name]
-  return typeof value === 'string' ? value.trim() : ''
 }

@@ -58,8 +58,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Build
-        run: npm run build
+      - name: Test server contract
+        run: npm run test
+
+      # Firebase Hosting은 Next.js 이전 중 문제가 생겼을 때 사용할 정적 rollback 경로다.
+      - name: Build Vite rollback
+        run: npm run build:vite
 
       - name: Check WIF configuration
         env:

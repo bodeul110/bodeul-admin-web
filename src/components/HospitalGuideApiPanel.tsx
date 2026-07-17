@@ -25,29 +25,19 @@ export function HospitalGuideApiPanel({
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [message, setMessage] = useState("");
   const isApiMode = dataBackend === "api";
-  const canLoad = Boolean(isApiMode && apiBaseUrl && currentUser);
+  const canLoad = Boolean(isApiMode && currentUser);
   const statusLabel = useMemo(() => {
     if (!isApiMode) {
       return "Firebase 모드";
     }
-    if (!apiBaseUrl) {
-      return "API URL 미설정";
-    }
-    return "API 모드";
+    return apiBaseUrl ? "외부 API 모드" : "Next.js 동일 출처";
   }, [apiBaseUrl, isApiMode]);
 
   const loadHospitalGuides = useCallback(async () => {
     if (!isApiMode) {
       setItems([]);
       setStatus("idle");
-      setMessage("현재는 Firebase 모드입니다. API 전환 검증은 VITE_BODEUL_DATA_BACKEND=api에서 실행합니다.");
-      return;
-    }
-
-    if (!apiBaseUrl) {
-      setItems([]);
-      setStatus("error");
-      setMessage("VITE_BODEUL_API_BASE_URL이 설정되지 않았습니다.");
+      setMessage("현재는 Firebase rollback 모드입니다. Next.js 검증은 API 모드에서 실행합니다.");
       return;
     }
 
@@ -80,7 +70,7 @@ export function HospitalGuideApiPanel({
         <div>
           <h1 className="text-base font-semibold text-gray-900">병원 가이드 API 검증</h1>
           <p className="mt-1 text-xs text-gray-500">
-            관리자 웹이 Firebase ID token으로 bodeul-api의 read API를 호출하는지 확인합니다.
+            관리자 웹이 Firebase ID token으로 Next.js 서버의 PostgreSQL read API를 호출하는지 확인합니다.
           </p>
         </div>
         <button
@@ -99,12 +89,12 @@ export function HospitalGuideApiPanel({
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">Backend</p>
           <p className="mt-2 text-sm font-semibold text-gray-900">{statusLabel}</p>
-          <p className="mt-1 text-xs text-gray-500">`VITE_BODEUL_DATA_BACKEND` 기준</p>
+          <p className="mt-1 text-xs text-gray-500">Next.js 기본값은 동일 출처 API</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">API Base URL</p>
-          <p className="mt-2 break-all text-sm font-semibold text-gray-900">{apiBaseUrl || "미설정"}</p>
-          <p className="mt-1 text-xs text-gray-500">브라우저 호출 대상</p>
+          <p className="mt-2 break-all text-sm font-semibold text-gray-900">{apiBaseUrl || "현재 Vercel origin"}</p>
+          <p className="mt-1 text-xs text-gray-500">외부 URL이 없으면 동일 출처 사용</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">Result</p>
@@ -170,18 +160,16 @@ export function HospitalGuideApiPanel({
 
 function resolveDefaultMessage(isApiMode: boolean, apiBaseUrl: string, currentUser: FirebaseUser | null): string {
   if (!isApiMode) {
-    return "현재는 Firebase 모드입니다. API 전환 검증은 VITE_BODEUL_DATA_BACKEND=api에서 실행합니다.";
-  }
-
-  if (!apiBaseUrl) {
-    return "VITE_BODEUL_API_BASE_URL이 설정되지 않았습니다.";
+    return "현재는 Firebase rollback 모드입니다. Next.js 검증은 API 모드에서 실행합니다.";
   }
 
   if (!currentUser) {
     return "관리자 세션을 확인한 뒤 API를 조회합니다.";
   }
 
-  return "조회 버튼을 눌러 bodeul-api 병원 가이드 응답을 확인합니다.";
+  return apiBaseUrl
+    ? "조회 버튼을 눌러 외부 API 병원 가이드 응답을 확인합니다."
+    : "조회 버튼을 눌러 Next.js 동일 출처 병원 가이드 응답을 확인합니다.";
 }
 
 function resolveApiErrorMessage(error: unknown): string {
