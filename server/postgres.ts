@@ -3,6 +3,7 @@ import "server-only";
 import {Pool, type PoolConfig} from "pg";
 
 import type {AppUserRole, HospitalGuideItem} from "./admin-hospital-guides";
+import {SUPABASE_ROOT_CA} from "./supabase-root-ca";
 
 type HospitalGuideRow = {
   readonly id: string;
@@ -72,7 +73,12 @@ function createPoolConfig(): PoolConfig {
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 5_000,
     allowExitOnIdle: true,
-    ssl: isLocalDatabase ? false : {rejectUnauthorized: true},
+    ssl: isLocalDatabase
+      ? false
+      : {
+          ca: SUPABASE_ROOT_CA,
+          rejectUnauthorized: true,
+        },
   };
 }
 
