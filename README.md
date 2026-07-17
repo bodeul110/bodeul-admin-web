@@ -97,9 +97,18 @@ npm run build:vite
 - Vercel Preview: Next.js 관리자 웹과 서버 route의 기본 검증 경로
 - Vercel Functions region: Supabase Tokyo와 같은 `hnd1`
 - Vite rollback: CI에서 정적 산출물 생성까지만 확인하며 별도 Hosting에는 배포하지 않음
-- Vercel Production: 메인 저장소 [#134](https://github.com/bodeul110/Bodeul/issues/134)의 도메인·환경 분리 결정 후 운영 자격 증명과 custom domain 활성화
+- Vercel Production: 메인 저장소 [#134](https://github.com/bodeul110/Bodeul/issues/134)의 출시 게이트 통과 후 운영 자격 증명과 custom domain 활성화
 
 Vercel Preview에는 `ADMIN_DATABASE_URL`을 Sensitive 환경변수로 저장합니다. 2026-07-17 Preview에서 실제 관리자 token `200`, 일반 사용자 token `403`, token 없음 `401`을 확인했습니다. Production에는 별도 결정 전까지 DB 자격 증명을 등록하지 않습니다.
+
+### Production 준비 상태
+
+- Google Cloud/Firebase `bodeul-prod-110`과 Supabase `bodeul-prod`는 개발 환경과 분리해 생성했습니다.
+- production `bodeul_admin_service` role은 만들었지만 Vercel 연결 전까지 `NOLOGIN`을 유지합니다.
+- Production 환경에는 `ADMIN_DATABASE_URL`을 등록하지 않았으므로 관리자 DB route는 의도대로 열리지 않습니다.
+- reCAPTCHA Enterprise App Check, authorized domain, custom domain, 관리자 MFA와 backup/restore 검증은 출시 전에 완료해야 합니다.
+
+프로젝트 생성 완료는 관리자 웹 출시 완료를 뜻하지 않습니다. 공용 인프라 생성과 DB migration 근거는 메인 저장소의 [Production 인프라 구축 기록](https://github.com/bodeul110/Bodeul/blob/master/docs/reports/production-infrastructure-bootstrap-2026-07-17.md)을 기준으로 봅니다.
 
 ## 저장소 경계
 
