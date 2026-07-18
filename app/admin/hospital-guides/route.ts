@@ -2,7 +2,7 @@ import {NextResponse} from "next/server";
 
 import {handleAdminHospitalGuides} from "../../../server/admin-hospital-guides";
 import {verifyFirebaseIdToken} from "../../../server/firebase-admin";
-import {findRoleByFirebaseUid, listHospitalGuides} from "../../../server/postgres";
+import {findAppUserByFirebaseUid, listHospitalGuides} from "../../../server/postgres";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     url.searchParams.get("limit"),
     {
       verifyIdToken: verifyFirebaseIdToken,
-      findRoleByFirebaseUid,
+      findAppUserByFirebaseUid,
       listHospitalGuides,
     },
   );
