@@ -95,6 +95,16 @@ Preview 배포 후:
 - 검증용 Firebase 사용자 2명과 `app_users` 임시 역할 행은 검증 직후 삭제
 - `bodeul_admin_service`는 `SELECT` 전용 권한과 connection limit 5를 유지
 
+### 2026-07-18 매니저 배정 API Preview 검증 결과
+
+- Preview deployment: `bodeul-admin-web-git-codex-admin-companion-905d09-wlsrjsals110.vercel.app`
+- Vercel Deployment Protection은 인증된 CLI로 통과하고 애플리케이션 응답을 별도로 확인했다.
+- token 없음 `401`, PostgreSQL `PATIENT` 역할 `403`, `ADMIN`의 잘못된 입력 `400` 확인
+- 이미 취소된 예약의 배정 요청은 `409 appointment_state_conflict`, DB 변경 없음
+- 임시 `REQUESTED` 예약의 배정 요청은 `201`, 예약 `MATCHED`·version 1, 세션 `READY`, 감사 이력 1건 확인
+- 임시 예약·세션·감사 이력은 검증 직후 역순 삭제했고 잔여 0건을 확인했다.
+- Firebase ID token은 메모리와 표준입력에서만 처리하고 파일, PR, 명령 출력에 남기지 않았다.
+
 ## Rollback
 
 1. Vercel Preview 승격을 중단한다.
