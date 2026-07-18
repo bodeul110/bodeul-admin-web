@@ -11,9 +11,9 @@ const successDependencies: AdminHospitalGuidesDependencies = {
     assert.equal(token, "firebase-token");
     return {uid: "admin-uid"};
   },
-  async findRoleByFirebaseUid(uid) {
+  async findAppUserByFirebaseUid(uid) {
     assert.equal(uid, "admin-uid");
-    return "ADMIN";
+    return {id: "5f0dcf7a-a842-4b79-985d-f94cf880db4a", role: "ADMIN"};
   },
   async listHospitalGuides(limit) {
     return [{
@@ -52,8 +52,8 @@ test("Firebase token이 잘못되면 401을 반환한다", async () => {
 test("PostgreSQL role이 ADMIN이 아니면 403을 반환한다", async () => {
   const result = await handleAdminHospitalGuides("Bearer firebase-token", null, {
     ...successDependencies,
-    async findRoleByFirebaseUid() {
-      return "MANAGER";
+    async findAppUserByFirebaseUid() {
+      return {id: "cd5dc083-327c-4a3d-ae65-38c4683f25eb", role: "MANAGER"};
     },
   });
 
@@ -64,7 +64,7 @@ test("PostgreSQL role이 ADMIN이 아니면 403을 반환한다", async () => {
 test("role 조회 실패는 503으로 구분한다", async () => {
   const result = await handleAdminHospitalGuides("Bearer firebase-token", null, {
     ...successDependencies,
-    async findRoleByFirebaseUid() {
+    async findAppUserByFirebaseUid() {
       throw new Error("db down");
     },
   });

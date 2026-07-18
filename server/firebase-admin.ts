@@ -3,7 +3,7 @@ import "server-only";
 import {getApps, initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 
-import type {VerifiedFirebaseIdentity} from "./admin-hospital-guides";
+import type {VerifiedFirebaseIdentity} from "./admin-auth";
 
 const APP_NAME = "bodeul-admin-web-server";
 

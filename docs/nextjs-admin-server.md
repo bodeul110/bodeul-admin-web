@@ -7,13 +7,14 @@
 ## 선택한 방식
 
 - React 화면은 유지하고 Next.js App Router를 기본 실행·빌드 경로로 사용한다.
-- `GET /admin/hospital-guides`를 첫 server route로 이전한다.
+- `GET /admin/hospital-guides`와 `POST /admin/companion-assignments`를 server route로 운영한다.
 - Firebase Admin SDK가 ID token의 서명, 발급자, audience, 만료를 검증한다.
 - PostgreSQL `app_users.firebase_uid`의 역할이 `ADMIN`일 때만 요청을 허용한다.
 - Vercel Functions는 Supabase transaction pooler 6543 포트와 `bodeul_admin_service`를 사용한다.
 - Vercel Functions는 Supabase Tokyo와 같은 `hnd1` 단일 리전에서 실행한다.
 - Supabase가 제공하는 공개 Root CA로 인증서와 호스트명을 검증하며 TLS 검증을 끄지 않는다.
 - 쿼리는 이름 없는 parameterized query로 실행하고 pool 크기는 인스턴스당 1로 제한한다.
+- 매니저 배정은 테이블 직접 쓰기 대신 예약 상태·version·역할을 검증하는 `assign_companion_session` 함수만 실행한다.
 - 기존 Vite 빌드는 CI rollback 자산으로 유지하되 Firebase Hosting 배포 경로는 종료한다.
 
 ## 검토한 대안
@@ -47,9 +48,12 @@ Firebase ID token 검증은 privileged Firebase Admin API를 호출하지 않으
 - group role: `bodeul_admin_runtime`
 - connection limit: 5
 - 애플리케이션 pool max: 1
-- `bodeul.app_users`: `SELECT`
-- `bodeul.hospital_guides`: `SELECT`
-- `INSERT`, `UPDATE`, `DELETE`: 허용하지 않음
+- `bodeul.app_users`, `bodeul.hospital_guides`, `bodeul.appointment_requests`: `SELECT`
+- 세션·리포트·후속 처리·배정 감사 테이블: `SELECT`
+- `bodeul.assign_companion_session`: `EXECUTE`
+- 테이블 `INSERT`, `UPDATE`, `DELETE`: 허용하지 않음
+
+2026-07-18 개발 DB에서 함수가 `security definer`, `search_path=bodeul, pg_temp`로 고정된 것을 다시 확인했다. `bodeul_admin_runtime`만 실행할 수 있고 `bodeul_core_runtime`, `anon`, `authenticated`, `service_role`, `PUBLIC`은 실행할 수 없다. Supabase Security Advisor 경고도 0건이다.
 
 DB password는 migration이나 문서에 넣지 않는다. 개발 DB role의 `LOGIN` 활성화와 비밀번호 회전은 Vercel Preview Sensitive 환경변수 반영과 같은 작업 단위로 수행한다. 2026-07-17 기준으로 Preview 전용 자격 증명을 등록했다. 별도 Supabase production 프로젝트에는 관리자 role을 생성했지만 Vercel 연결 전까지 `NOLOGIN`을 유지하며, Production에는 `ADMIN_DATABASE_URL`을 등록하지 않았다.
 
@@ -73,6 +77,14 @@ Preview 배포 후:
 4. 응답 `items`와 `limit`, 병원·진료과·단계 수 확인
 5. 브라우저 bundle과 Vercel build log에 DB URL이 노출되지 않았는지 확인
 
+매니저 배정 API는 다음을 추가로 확인한다.
+
+1. token 없음과 일반 사용자 token: 각각 `401`, `403`
+2. 잘못된 UUID와 version: `400`
+3. 존재하지 않는 예약: `404`
+4. 예약 상태 또는 version 충돌: `409`, DB 변경 없음
+5. `REQUESTED` 예약 성공: `201`, 예약 `MATCHED`, 세션 `READY`, 감사 이력 1건
+
 ### 2026-07-17 Preview 검증 결과
 
 - Preview deployment: `bodeul-admin-heyiu9xmh-wlsrjsals110.vercel.app`
@@ -93,6 +105,7 @@ Preview 배포 후:
 ## 리스크와 후속 작업
 
 - Vite 화면의 매니저 심사 기능은 아직 Firestore·Storage에 직접 접근한다. 도메인별 PostgreSQL 계약이 준비될 때 순차 이전한다.
+- 배정 route는 개발 DB의 Flyway V5·V6를 전제로 한다. production에는 V1~V3만 적용돼 있으므로 production DB migration과 성공·충돌 검증 전에는 route를 공개하지 않는다.
 - token revocation 즉시 확인은 현재 범위가 아니다. 관리자 세션 만료와 위험 수준을 확인한 뒤 WIF 기반 자격 증명을 검토한다.
 - App Check reCAPTCHA Enterprise와 custom backend 검증은 [Issue #16](https://github.com/bodeul110/bodeul-admin-web/issues/16)에서 진행한다.
 - production Google Cloud/Firebase와 Supabase 기반은 생성했다. Vercel Production DB 자격 증명, 도메인, App Check와 관리자 운영 검증은 메인 저장소 #134의 출시 게이트로 유지한다.

@@ -2,7 +2,9 @@ import "server-only";
 
 import {Pool, type PoolConfig} from "pg";
 
-import type {AppUserRole, HospitalGuideItem} from "./admin-hospital-guides";
+import type {AppUserIdentity, AppUserRole} from "./admin-auth";
+import type {CompanionAssignmentCommand} from "./admin-companion-assignments";
+import type {HospitalGuideItem} from "./admin-hospital-guides";
 import {SUPABASE_ROOT_CA} from "./supabase-root-ca";
 
 type HospitalGuideRow = {
@@ -14,18 +16,48 @@ type HospitalGuideRow = {
   readonly updated_at: Date | string;
 };
 
+type AppUserRow = {
+  readonly id: string;
+  readonly role: unknown;
+};
+
 const globalForPostgres = globalThis as typeof globalThis & {
   bodeulAdminPool?: Pool;
 };
 
-export async function findRoleByFirebaseUid(firebaseUid: string): Promise<AppUserRole | null> {
-  const result = await getAdminPool().query<{readonly role: unknown}>(
-    "select role from bodeul.app_users where firebase_uid = $1 limit 1",
+export async function findAppUserByFirebaseUid(firebaseUid: string): Promise<AppUserIdentity | null> {
+  const result = await getAdminPool().query<AppUserRow>(
+    "select id, role from bodeul.app_users where firebase_uid = $1 limit 1",
     [firebaseUid],
   );
 
-  const role = result.rows[0]?.role;
-  return isAppUserRole(role) ? role : null;
+  const row = result.rows[0];
+  return row && isAppUserRole(row.role)
+    ? {id: String(row.id), role: row.role}
+    : null;
+}
+
+export async function assignCompanionSession(command: CompanionAssignmentCommand): Promise<string> {
+  const result = await getAdminPool().query<{readonly session_id: string}>(
+    [
+      "select bodeul.assign_companion_session(",
+      "$1::uuid, $2::uuid, $3::uuid, $4::bigint, $5::text",
+      ") as session_id",
+    ].join(" "),
+    [
+      command.appointmentRequestId,
+      command.managerUserId,
+      command.actorAdminUserId,
+      command.expectedAppointmentVersion,
+      command.reason,
+    ],
+  );
+
+  const sessionId = result.rows[0]?.session_id;
+  if (!sessionId) {
+    throw new Error("배정 함수가 세션 ID를 반환하지 않았습니다.");
+  }
+  return String(sessionId);
 }
 
 export async function listHospitalGuides(limit: number): Promise<readonly HospitalGuideItem[]> {

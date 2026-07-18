@@ -1,8 +1,7 @@
-export type AppUserRole = "PATIENT" | "GUARDIAN" | "MANAGER" | "ADMIN";
-
-export type VerifiedFirebaseIdentity = {
-  readonly uid: string;
-};
+import {
+  authorizeAdmin,
+  type AdminAuthorizationDependencies,
+} from "./admin-auth.ts";
 
 export type HospitalGuideItem = {
   readonly id: string;
@@ -18,9 +17,7 @@ export type HospitalGuidesPayload = {
   readonly limit: number;
 };
 
-export type AdminHospitalGuidesDependencies = {
-  readonly verifyIdToken: (token: string) => Promise<VerifiedFirebaseIdentity>;
-  readonly findRoleByFirebaseUid: (uid: string) => Promise<AppUserRole | null>;
+export type AdminHospitalGuidesDependencies = AdminAuthorizationDependencies & {
   readonly listHospitalGuides: (limit: number) => Promise<readonly HospitalGuideItem[]>;
 };
 
@@ -40,31 +37,9 @@ export async function handleAdminHospitalGuides(
   rawLimit: string | null,
   dependencies: AdminHospitalGuidesDependencies,
 ): Promise<AdminHospitalGuidesResult> {
-  const tokenResult = extractBearerToken(authorizationHeader);
-  if (!tokenResult.ok) {
-    return tokenResult.failure;
-  }
-
-  let identity: VerifiedFirebaseIdentity;
-  try {
-    identity = await dependencies.verifyIdToken(tokenResult.token);
-  } catch {
-    return failure(401, "invalid_firebase_token", "Firebase ID token 검증에 실패했습니다.");
-  }
-
-  if (!identity.uid.trim()) {
-    return failure(401, "invalid_firebase_token", "Firebase ID token에 uid가 없습니다.");
-  }
-
-  let role: AppUserRole | null;
-  try {
-    role = await dependencies.findRoleByFirebaseUid(identity.uid);
-  } catch {
-    return failure(503, "role_lookup_failed", "관리자 권한 확인에 실패했습니다.");
-  }
-
-  if (role !== "ADMIN") {
-    return failure(403, "admin_role_required", "관리자 권한이 필요합니다.");
+  const authorization = await authorizeAdmin(authorizationHeader, dependencies);
+  if (!authorization.ok) {
+    return authorization.failure;
   }
 
   const limitResult = parseHospitalGuideLimit(rawLimit);
@@ -102,28 +77,6 @@ export function parseHospitalGuideLimit(rawLimit: string | null):
   }
 
   return {ok: true, limit};
-}
-
-function extractBearerToken(authorizationHeader: string | null):
-  | {readonly ok: true; readonly token: string}
-  | {readonly ok: false; readonly failure: AdminHospitalGuidesResult} {
-  if (!authorizationHeader?.trim()) {
-    return {
-      ok: false,
-      failure: failure(401, "missing_authorization", "Authorization 헤더가 필요합니다."),
-    };
-  }
-
-  const match = authorizationHeader.match(/^Bearer\s+(.+)$/iu);
-  const token = match?.[1]?.trim() || "";
-  if (!token) {
-    return {
-      ok: false,
-      failure: failure(401, "invalid_authorization", "Authorization 헤더는 Bearer 토큰 형식이어야 합니다."),
-    };
-  }
-
-  return {ok: true, token};
 }
 
 function failure(status: number, error: string, message: string): AdminHospitalGuidesResult {
