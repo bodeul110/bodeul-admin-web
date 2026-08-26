@@ -1,7 +1,10 @@
 import {NextResponse} from "next/server";
 
 import {handleAdminHospitalGuides} from "../../../server/admin-hospital-guides";
-import {verifyFirebaseIdToken} from "../../../server/firebase-admin";
+import {
+  createAdminAppCheckDependencies,
+  verifyFirebaseIdToken,
+} from "../../../server/firebase-admin";
 import {findAppUserByFirebaseUid, listHospitalGuides} from "../../../server/postgres";
 
 export const runtime = "nodejs";
@@ -11,8 +14,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const result = await handleAdminHospitalGuides(
     request.headers.get("authorization"),
+    request.headers.get("x-firebase-appcheck"),
     url.searchParams.get("limit"),
     {
+      ...createAdminAppCheckDependencies(),
       verifyIdToken: verifyFirebaseIdToken,
       findAppUserByFirebaseUid,
       listHospitalGuides,

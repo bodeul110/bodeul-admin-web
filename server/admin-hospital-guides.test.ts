@@ -7,6 +7,12 @@ import {
 } from "./admin-hospital-guides.ts";
 
 const successDependencies: AdminHospitalGuidesDependencies = {
+  mode: "off",
+  allowedAppIds: new Set(),
+  async verifyAppCheckToken() {
+    throw new Error("off 모드에서는 호출되지 않아야 합니다.");
+  },
+  recordVerdict() {},
   async verifyIdToken(token) {
     assert.equal(token, "firebase-token");
     return {uid: "admin-uid"};
@@ -28,7 +34,7 @@ const successDependencies: AdminHospitalGuidesDependencies = {
 };
 
 test("Authorization 헤더가 없으면 401을 반환한다", async () => {
-  const result = await handleAdminHospitalGuides(null, null, successDependencies);
+  const result = await handleAdminHospitalGuides(null, null, null, successDependencies);
 
   assert.equal(result.status, 401);
   assert.deepEqual(result.body, {
@@ -38,7 +44,7 @@ test("Authorization 헤더가 없으면 401을 반환한다", async () => {
 });
 
 test("Firebase token이 잘못되면 401을 반환한다", async () => {
-  const result = await handleAdminHospitalGuides("Bearer bad-token", null, {
+  const result = await handleAdminHospitalGuides("Bearer bad-token", null, null, {
     ...successDependencies,
     async verifyIdToken() {
       throw new Error("invalid token");
@@ -49,8 +55,28 @@ test("Firebase token이 잘못되면 401을 반환한다", async () => {
   assert.equal("error" in result.body ? result.body.error : "", "invalid_firebase_token");
 });
 
+test("enforce 모드는 App Check 실패 시 DB 조회 전에 요청을 거부한다", async () => {
+  let databaseCalled = false;
+  const result = await handleAdminHospitalGuides("Bearer firebase-token", "bad-app-check", null, {
+    ...successDependencies,
+    mode: "enforce",
+    allowedAppIds: new Set(["1:000000000000:web:production"]),
+    async verifyAppCheckToken() {
+      return {status: "invalid"};
+    },
+    async findAppUserByFirebaseUid() {
+      databaseCalled = true;
+      return null;
+    },
+  });
+
+  assert.equal(result.status, 401);
+  assert.equal("error" in result.body ? result.body.error : "", "invalid_app_check");
+  assert.equal(databaseCalled, false);
+});
+
 test("PostgreSQL role이 ADMIN이 아니면 403을 반환한다", async () => {
-  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, {
+  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, null, {
     ...successDependencies,
     async findAppUserByFirebaseUid() {
       return {id: "cd5dc083-327c-4a3d-ae65-38c4683f25eb", role: "MANAGER"};
@@ -62,7 +88,7 @@ test("PostgreSQL role이 ADMIN이 아니면 403을 반환한다", async () => {
 });
 
 test("role 조회 실패는 503으로 구분한다", async () => {
-  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, {
+  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, null, {
     ...successDependencies,
     async findAppUserByFirebaseUid() {
       throw new Error("db down");
@@ -74,14 +100,14 @@ test("role 조회 실패는 503으로 구분한다", async () => {
 });
 
 test("limit은 1부터 100 사이의 정수만 허용한다", async () => {
-  const result = await handleAdminHospitalGuides("Bearer firebase-token", "101", successDependencies);
+  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, "101", successDependencies);
 
   assert.equal(result.status, 400);
   assert.equal("error" in result.body ? result.body.error : "", "invalid_limit");
 });
 
 test("관리자 요청은 기본 limit 50과 병원 가이드 목록을 반환한다", async () => {
-  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, successDependencies);
+  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, null, successDependencies);
 
   assert.equal(result.status, 200);
   assert.equal("limit" in result.body ? result.body.limit : 0, 50);
@@ -89,7 +115,7 @@ test("관리자 요청은 기본 limit 50과 병원 가이드 목록을 반환�
 });
 
 test("병원 가이드 조회 실패는 503으로 구분한다", async () => {
-  const result = await handleAdminHospitalGuides("Bearer firebase-token", "2", {
+  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, "2", {
     ...successDependencies,
     async listHospitalGuides() {
       throw new Error("db down");

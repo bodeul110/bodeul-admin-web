@@ -12,6 +12,12 @@ const ADMIN_ID = "5f0dcf7a-a842-4b79-985d-f94cf880db4a";
 const SESSION_ID = "8d8fbac5-8eb1-5bb0-b584-b17919cacb7d";
 
 const successDependencies: AdminCompanionAssignmentDependencies = {
+  mode: "off",
+  allowedAppIds: new Set(),
+  async verifyAppCheckToken() {
+    throw new Error("off 모드에서는 호출되지 않아야 합니다.");
+  },
+  recordVerdict() {},
   async verifyIdToken(token) {
     assert.equal(token, "firebase-token");
     return {uid: "admin-uid"};
@@ -41,7 +47,7 @@ const validBody = {
 
 test("Authorization 헤더가 없으면 배정 함수를 호출하지 않고 401을 반환한다", async () => {
   let called = false;
-  const result = await handleAdminCompanionAssignment(null, validBody, {
+  const result = await handleAdminCompanionAssignment(null, null, validBody, {
     ...successDependencies,
     async assignCompanionSession() {
       called = true;
@@ -53,8 +59,33 @@ test("Authorization 헤더가 없으면 배정 함수를 호출하지 않고 401
   assert.equal(called, false);
 });
 
+test("enforce 모드는 App Check 실패 시 DB 작업 전에 요청을 거부한다", async () => {
+  let databaseCalled = false;
+  const result = await handleAdminCompanionAssignment(
+    "Bearer firebase-token",
+    "bad-app-check",
+    validBody,
+    {
+      ...successDependencies,
+      mode: "enforce",
+      allowedAppIds: new Set(["1:000000000000:web:production"]),
+      async verifyAppCheckToken() {
+        return {status: "invalid"};
+      },
+      async findAppUserByFirebaseUid() {
+        databaseCalled = true;
+        return null;
+      },
+    },
+  );
+
+  assert.equal(result.status, 401);
+  assert.equal("error" in result.body ? result.body.error : "", "invalid_app_check");
+  assert.equal(databaseCalled, false);
+});
+
 test("PostgreSQL role이 ADMIN이 아니면 403을 반환한다", async () => {
-  const result = await handleAdminCompanionAssignment("Bearer firebase-token", validBody, {
+  const result = await handleAdminCompanionAssignment("Bearer firebase-token", null, validBody, {
     ...successDependencies,
     async findAppUserByFirebaseUid() {
       return {id: MANAGER_ID, role: "MANAGER"};
@@ -66,11 +97,11 @@ test("PostgreSQL role이 ADMIN이 아니면 403을 반환한다", async () => {
 });
 
 test("UUID와 예약 버전을 검증한다", async () => {
-  const invalidUuid = await handleAdminCompanionAssignment("Bearer firebase-token", {
+  const invalidUuid = await handleAdminCompanionAssignment("Bearer firebase-token", null, {
     ...validBody,
     appointmentRequestId: "not-a-uuid",
   }, successDependencies);
-  const invalidVersion = await handleAdminCompanionAssignment("Bearer firebase-token", {
+  const invalidVersion = await handleAdminCompanionAssignment("Bearer firebase-token", null, {
     ...validBody,
     expectedAppointmentVersion: -1,
   }, successDependencies);
@@ -82,6 +113,7 @@ test("UUID와 예약 버전을 검증한다", async () => {
 test("관리자 요청은 actor ID를 포함해 배정 함수를 실행하고 201을 반환한다", async () => {
   const result = await handleAdminCompanionAssignment(
     "Bearer firebase-token",
+    null,
     validBody,
     successDependencies,
   );
@@ -101,7 +133,7 @@ for (const scenario of [
   {code: "unexpected", status: 503, error: "companion_assignment_failed"},
 ]) {
   test(`DB 오류 ${scenario.code}를 공개 API 오류로 변환한다`, async () => {
-    const result = await handleAdminCompanionAssignment("Bearer firebase-token", validBody, {
+    const result = await handleAdminCompanionAssignment("Bearer firebase-token", null, validBody, {
       ...successDependencies,
       async assignCompanionSession() {
         throw Object.assign(new Error("database detail must not escape"), {code: scenario.code});

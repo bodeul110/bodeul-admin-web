@@ -1,5 +1,7 @@
 import type { User as FirebaseUser } from "firebase/auth";
 
+import {createAdminApiHeaders} from "./adminApiHeaders";
+import {getFirebaseAppCheckToken} from "./appCheck";
 import {clientEnv} from "./clientEnv";
 
 export type BodeulDataBackend = "firebase" | "api";
@@ -59,16 +61,16 @@ export async function fetchAdminHospitalGuides(
   const baseUrl = trimTrailingSlash(options.baseUrl ?? resolveBodeulApiBaseUrl());
 
   const limit = options.limit ?? 50;
-  const token = await user.getIdToken();
+  const [token, appCheckToken] = await Promise.all([
+    user.getIdToken(),
+    getFirebaseAppCheckToken(),
+  ]);
   const url = createBodeulApiUrl(baseUrl, "/admin/hospital-guides");
   url.searchParams.set("limit", String(limit));
 
   const response = await fetch(url, {
     method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
+    headers: createAdminApiHeaders(token, appCheckToken),
   });
   const responseBody = await readJson(response);
 
