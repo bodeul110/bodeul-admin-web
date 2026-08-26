@@ -30,10 +30,11 @@ const MAX_REASON_LENGTH = 500;
 
 export async function handleAdminCompanionAssignment(
   authorizationHeader: string | null,
+  appCheckHeader: string | null,
   requestBody: unknown,
   dependencies: AdminCompanionAssignmentDependencies,
 ): Promise<AdminCompanionAssignmentResult> {
-  const authorization = await authorizeAdmin(authorizationHeader, dependencies);
+  const authorization = await authorizeAdmin(authorizationHeader, appCheckHeader, dependencies);
   if (!authorization.ok) {
     return authorization.failure;
   }

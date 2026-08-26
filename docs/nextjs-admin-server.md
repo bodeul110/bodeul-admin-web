@@ -9,6 +9,8 @@
 - React 화면은 유지하고 Next.js App Router를 기본 실행·빌드 경로로 사용한다.
 - `GET /admin/hospital-guides`와 `POST /admin/companion-assignments`를 server route로 운영한다.
 - Firebase Admin SDK가 ID token의 서명, 발급자, audience, 만료를 검증한다.
+- reCAPTCHA Enterprise App Check token을 `X-Firebase-AppCheck` 헤더로 받고 Firebase Admin SDK와 정확한 Web App ID로 검증한다.
+- App Check는 `off`·`observe`·`enforce`를 분리하고 VALID 요청 확인 전에는 `observe`까지만 사용한다.
 - PostgreSQL `app_users.firebase_uid`의 역할이 `ADMIN`일 때만 요청을 허용한다.
 - Vercel Functions는 Supabase transaction pooler 6543 포트와 `bodeul_admin_service`를 사용한다.
 - Vercel Functions는 Supabase Tokyo와 같은 `hnd1` 단일 리전에서 실행한다.
@@ -34,11 +36,13 @@
 
 | 이름 | 위치 | 용도 |
 | --- | --- | --- |
-| `NEXT_PUBLIC_FIREBASE_*` | 브라우저 | Firebase Web SDK 설정 |
+| `NEXT_PUBLIC_FIREBASE_*` | 브라우저 | Firebase Web SDK 설정과 App Check provider 공개 스위치·site key |
 | `NEXT_PUBLIC_BODEUL_DATA_BACKEND` | 브라우저 | 기본 `api`, rollback은 `firebase` |
 | `NEXT_PUBLIC_BODEUL_API_BASE_URL` | 브라우저 | 비우면 동일 출처, 과거 Node 비교 시에만 외부 URL |
 | `FIREBASE_PROJECT_ID` | 서버 | Firebase ID token audience 검증 |
 | `ADMIN_DATABASE_URL` | 서버 | 관리자 조회 전용 PostgreSQL 연결 |
+| `ADMIN_APP_CHECK_MODE` | 서버 | `off`, `observe`, `enforce` 전환 |
+| `FIREBASE_APPCHECK_ALLOWED_APP_IDS` | 서버 | 현재 배포 환경이 신뢰하는 Firebase Web App ID |
 
 Firebase ID token 검증은 privileged Firebase Admin API를 호출하지 않으므로 현재 단계에서는 프로젝트 ID만 사용한다. 계정 강제 로그아웃을 즉시 반영하는 revocation check가 필요해지면 Vercel OIDC 기반 Google Cloud WIF 또는 전용 서비스 계정 자격 증명을 별도 설계한다.
 
@@ -71,11 +75,13 @@ npm run build:vite
 
 Preview 배포 후:
 
-1. token 없이 `/admin/hospital-guides` 호출: `401`
-2. 유효한 일반 사용자 token: `403`
-3. PostgreSQL `ADMIN` 역할 사용자 token: `200`
-4. 응답 `items`와 `limit`, 병원·진료과·단계 수 확인
-5. 브라우저 bundle과 Vercel build log에 DB URL이 노출되지 않았는지 확인
+1. Firebase ID token 없이 `/admin/hospital-guides` 호출: `401`
+2. `observe`에서 App Check token 누락·위조·다른 Web App ID가 판정되지만 기존 인증 흐름은 유지되는지 확인
+3. 유효한 일반 사용자 Firebase ID token: `403`
+4. PostgreSQL `ADMIN` 역할과 정상 App Check token: `200`, `valid` 판정
+5. `enforce` 후보에서 App Check token 누락·위조는 `401`, 다른 Web App ID는 `403`
+6. 응답 `items`와 `limit`, 병원·진료과·단계 수 확인
+7. 브라우저 bundle과 Vercel build log에 DB URL이나 token 원문이 노출되지 않았는지 확인
 
 매니저 배정 API는 다음을 추가로 확인한다.
 
@@ -107,16 +113,19 @@ Preview 배포 후:
 
 ## Rollback
 
-1. Vercel Preview 승격을 중단한다.
-2. `npm run build:vite`로 rollback 산출물 생성이 가능한지 확인한다.
-3. 브라우저 데이터 모드는 `VITE_BODEUL_DATA_BACKEND=firebase`를 사용한다.
-4. 필요하면 `bodeul_admin_service`를 `NOLOGIN`으로 돌리고 Vercel `ADMIN_DATABASE_URL`을 제거한다.
+1. 서버 검증 오류가 있으면 `ADMIN_APP_CHECK_MODE=observe`로 내려 차단만 해제한다.
+2. 서버 검증을 긴급 우회할 때만 `ADMIN_APP_CHECK_MODE=off`로 내린다.
+3. reCAPTCHA Enterprise provider 또는 외부 스크립트가 문제면 `NEXT_PUBLIC_FIREBASE_APPCHECK_ENABLED=false`로 바꾸고 재배포해 브라우저 초기화 자체를 중단한다.
+4. Vercel Preview 승격을 중단한다.
+5. `npm run build:vite`로 rollback 산출물 생성이 가능한지 확인한다.
+6. 브라우저 데이터 모드는 `VITE_BODEUL_DATA_BACKEND=firebase`를 사용한다.
+7. 필요하면 `bodeul_admin_service`를 `NOLOGIN`으로 돌리고 Vercel `ADMIN_DATABASE_URL`을 제거한다.
 
 ## 리스크와 후속 작업
 
 - Vite 화면의 매니저 심사 기능은 아직 Firestore·Storage에 직접 접근한다. 도메인별 PostgreSQL 계약이 준비될 때 순차 이전한다.
-- 배정 route는 개발 DB의 Flyway V5·V6를 전제로 한다. production에는 V1~V3만 적용돼 있으므로 production DB migration과 성공·충돌 검증 전에는 route를 공개하지 않는다.
+- production DB에는 Flyway V15까지 적용됐지만 관리자 DB login과 Vercel `ADMIN_DATABASE_URL`은 아직 비활성이다. 운영 role 활성화와 성공·충돌 smoke 전에는 배정 route를 공개하지 않는다.
 - token revocation 즉시 확인은 현재 범위가 아니다. 관리자 세션 만료와 위험 수준을 확인한 뒤 WIF 기반 자격 증명을 검토한다.
-- App Check reCAPTCHA Enterprise와 custom backend 검증은 [Issue #16](https://github.com/bodeul110/bodeul-admin-web/issues/16)에서 진행한다.
+- App Check 클라이언트·custom backend 검증 코드는 반영했으며, 환경별 provider와 VALID 메트릭 검증은 [Issue #16](https://github.com/bodeul110/bodeul-admin-web/issues/16)에서 계속 추적한다.
 - production Google Cloud/Firebase와 Supabase 기반은 생성했다. Vercel Production DB 자격 증명, 도메인, App Check와 관리자 운영 검증은 메인 저장소 #134의 출시 게이트로 유지한다.
 - 공용 production 리소스와 DB migration의 실제 검증 결과는 메인 저장소의 [Production 인프라 구축 기록](https://github.com/bodeul110/Bodeul/blob/master/docs/reports/production-infrastructure-bootstrap-2026-07-17.md)을 따른다.

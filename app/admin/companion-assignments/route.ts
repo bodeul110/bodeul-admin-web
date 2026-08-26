@@ -1,7 +1,10 @@
 import {NextResponse} from "next/server";
 
 import {handleAdminCompanionAssignment} from "../../../server/admin-companion-assignments";
-import {verifyFirebaseIdToken} from "../../../server/firebase-admin";
+import {
+  createAdminAppCheckDependencies,
+  verifyFirebaseIdToken,
+} from "../../../server/firebase-admin";
 import {assignCompanionSession, findAppUserByFirebaseUid} from "../../../server/postgres";
 
 export const runtime = "nodejs";
@@ -17,8 +20,10 @@ export async function POST(request: Request) {
 
   const result = await handleAdminCompanionAssignment(
     request.headers.get("authorization"),
+    request.headers.get("x-firebase-appcheck"),
     body,
     {
+      ...createAdminAppCheckDependencies(),
       verifyIdToken: verifyFirebaseIdToken,
       findAppUserByFirebaseUid,
       assignCompanionSession,

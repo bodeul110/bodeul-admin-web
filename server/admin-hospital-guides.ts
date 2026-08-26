@@ -34,10 +34,11 @@ const MAX_LIMIT = 100;
 
 export async function handleAdminHospitalGuides(
   authorizationHeader: string | null,
+  appCheckHeader: string | null,
   rawLimit: string | null,
   dependencies: AdminHospitalGuidesDependencies,
 ): Promise<AdminHospitalGuidesResult> {
-  const authorization = await authorizeAdmin(authorizationHeader, dependencies);
+  const authorization = await authorizeAdmin(authorizationHeader, appCheckHeader, dependencies);
   if (!authorization.ok) {
     return authorization.failure;
   }

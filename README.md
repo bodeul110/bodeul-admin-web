@@ -5,15 +5,17 @@
 ## 구성
 
 - Firebase Authentication으로 관리자 신원을 확인합니다.
-- Next.js 서버가 Firebase ID token을 다시 검증합니다.
+- 브라우저는 reCAPTCHA Enterprise 기반 App Check token을 관리자 API 요청에 함께 보냅니다.
+- Next.js 서버가 Firebase ID token과 App Check token을 각각 검증합니다.
 - PostgreSQL `app_users`의 `ADMIN` 역할로 관리자 권한을 판정합니다.
 - 관리자 전용 DB role로 Supabase PostgreSQL을 직접 조회합니다.
 - Android와 사용자 웹은 별도의 Spring Core API를 사용합니다.
 
 ```mermaid
 flowchart LR
-    Browser["관리자 브라우저\nReact"] -->|"Firebase ID token"| Next["Vercel Next.js\n관리자 서버"]
+    Browser["관리자 브라우저\nReact"] -->|"Firebase ID token\nApp Check token"| Next["Vercel Next.js\n관리자 서버"]
     Next -->|"token 서명·audience·만료 검증"| Auth["Firebase Auth"]
+    Next -->|"token 서명·Web App ID 검증"| AppCheck["Firebase App Check\nreCAPTCHA Enterprise"]
     Next -->|"bodeul_admin_service\n조회 전용"| DB["Supabase PostgreSQL\n공용 DB"]
     App["사용자·매니저 앱/웹"] --> Core["Spring Core API"]
     Core --> DB
@@ -44,7 +46,7 @@ flowchart LR
 
 | Method | Path | 인증·인가 | 설명 |
 | --- | --- | --- | --- |
-| `GET` | `/admin/hospital-guides?limit=50` | Firebase ID token + PostgreSQL `ADMIN` | 병원 가이드 목록 조회 |
+| `GET` | `/admin/hospital-guides?limit=50` | Firebase ID token + App Check + PostgreSQL `ADMIN` | 병원 가이드 목록 조회 |
 
 `limit`은 1부터 100 사이의 정수만 허용합니다. 응답은 캐시하지 않으며 DB 장애는 `503`, 관리자 권한 부족은 `403`, 잘못된 token은 `401`로 구분합니다.
 
@@ -64,14 +66,19 @@ Copy-Item .env.example .env.local
 - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
 - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
-- `NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY` (선택)
+- `NEXT_PUBLIC_FIREBASE_APPCHECK_ENABLED` (`true`일 때만 브라우저 provider 초기화)
+- `NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY`
 
 서버 전용값:
 
 - `FIREBASE_PROJECT_ID`
 - `ADMIN_DATABASE_URL`
+- `ADMIN_APP_CHECK_MODE` (`off`, `observe`, `enforce`)
+- `FIREBASE_APPCHECK_ALLOWED_APP_IDS`
 
 `ADMIN_DATABASE_URL`은 Supabase transaction pooler의 6543 포트와 `bodeul_admin_service`를 사용합니다. 서버는 Supabase 공개 Root CA로 인증서와 호스트명을 검증합니다. DB URL, 서비스 계정, App Check debug token은 브라우저 환경변수나 저장소에 넣지 않습니다.
+
+App Check는 `observe`에서 정상·누락·위조·다른 Web App ID와 검증 서비스 장애 판정만 기록하고 기존 요청은 허용합니다. 정상 관리자 흐름의 `valid` 판정과 Firebase App Check 메트릭을 확인한 뒤에만 `enforce`로 바꿉니다. 서버 검증 장애 시 `observe`, 긴급 우회 시 `off`로 되돌립니다. 브라우저 provider 장애 시에는 `NEXT_PUBLIC_FIREBASE_APPCHECK_ENABLED=false`로 바꾸고 재배포하며 token 원문은 로그에 남기지 않습니다.
 
 ## 실행과 검증
 
@@ -106,7 +113,8 @@ Vercel Preview에는 `ADMIN_DATABASE_URL`을 Sensitive 환경변수로 저장합
 - Google Cloud/Firebase `bodeul-prod-110`과 Supabase `bodeul-prod`는 개발 환경과 분리해 생성했습니다.
 - production `bodeul_admin_service` role은 만들었지만 Vercel 연결 전까지 `NOLOGIN`을 유지합니다.
 - Production 환경에는 `ADMIN_DATABASE_URL`을 등록하지 않았으므로 관리자 DB route는 의도대로 열리지 않습니다.
-- reCAPTCHA Enterprise App Check, authorized domain, custom domain, 관리자 MFA와 backup/restore 검증은 출시 전에 완료해야 합니다.
+- production reCAPTCHA Enterprise key, Web App Check provider와 Firebase Auth 기본 도메인은 구성했습니다.
+- Vercel Production의 새 배포와 App Check `observe` 반영, 정상 token 메트릭, custom domain, 관리자 MFA와 deployment rollback 검증은 출시 전에 완료해야 합니다.
 
 프로젝트 생성 완료는 관리자 웹 출시 완료를 뜻하지 않습니다. 공용 인프라 생성과 DB migration 근거는 메인 저장소의 [Production 인프라 구축 기록](https://github.com/bodeul110/Bodeul/blob/master/docs/reports/production-infrastructure-bootstrap-2026-07-17.md)을 기준으로 봅니다.
 

@@ -1,3 +1,8 @@
+import {
+  authorizeAdminAppCheck,
+  type AdminAppCheckDependencies,
+} from "./admin-app-check.ts";
+
 export type AppUserRole = "PATIENT" | "GUARDIAN" | "MANAGER" | "ADMIN";
 
 export type VerifiedFirebaseIdentity = {
@@ -19,7 +24,7 @@ export type AdminFailure = {
   readonly body: AdminErrorBody;
 };
 
-export type AdminAuthorizationDependencies = {
+export type AdminAuthorizationDependencies = AdminAppCheckDependencies & {
   readonly verifyIdToken: (token: string) => Promise<VerifiedFirebaseIdentity>;
   readonly findAppUserByFirebaseUid: (uid: string) => Promise<AppUserIdentity | null>;
 };
@@ -36,6 +41,7 @@ export type AdminAuthorizationResult =
 
 export async function authorizeAdmin(
   authorizationHeader: string | null,
+  appCheckHeader: string | null,
   dependencies: AdminAuthorizationDependencies,
 ): Promise<AdminAuthorizationResult> {
   const tokenResult = extractBearerToken(authorizationHeader);
@@ -53,6 +59,11 @@ export async function authorizeAdmin(
   const firebaseUid = identity.uid.trim();
   if (!firebaseUid) {
     return authorizationFailure(401, "invalid_firebase_token", "Firebase ID token에 uid가 없습니다.");
+  }
+
+  const appCheckFailure = await authorizeAdminAppCheck(appCheckHeader, dependencies);
+  if (appCheckFailure) {
+    return {ok: false, failure: appCheckFailure};
   }
 
   let appUser: AppUserIdentity | null;
