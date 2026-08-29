@@ -4,14 +4,20 @@ import {
 } from "./admin-app-check.ts";
 
 export type AppUserRole = "PATIENT" | "GUARDIAN" | "MANAGER" | "ADMIN";
+export type AdminDetailRole = "SUPER_ADMIN" | "OPERATIONS" | "DEVELOPER";
 
 export type VerifiedFirebaseIdentity = {
   readonly uid: string;
+  readonly mfaVerified?: boolean;
 };
+
+export type AdminMfaMode = "off" | "observe" | "enforce";
 
 export type AppUserIdentity = {
   readonly id: string;
   readonly role: AppUserRole;
+  readonly adminRole: AdminDetailRole | null;
+  readonly breakGlassExpiresAt: string | null;
 };
 
 export type AdminErrorBody = {
@@ -27,6 +33,8 @@ export type AdminFailure = {
 export type AdminAuthorizationDependencies = AdminAppCheckDependencies & {
   readonly verifyIdToken: (token: string) => Promise<VerifiedFirebaseIdentity>;
   readonly findAppUserByFirebaseUid: (uid: string) => Promise<AppUserIdentity | null>;
+  readonly mfaMode?: AdminMfaMode;
+  readonly recordMfaVerdict?: (verified: boolean, mode: AdminMfaMode) => void;
 };
 
 export type AdminAuthorizationResult =
@@ -61,6 +69,12 @@ export async function authorizeAdmin(
     return authorizationFailure(401, "invalid_firebase_token", "Firebase ID token에 uid가 없습니다.");
   }
 
+  const mfaMode = dependencies.mfaMode || "off";
+  dependencies.recordMfaVerdict?.(identity.mfaVerified === true, mfaMode);
+  if (mfaMode === "enforce" && identity.mfaVerified !== true) {
+    return authorizationFailure(401, "admin_mfa_required", "관리자 계정은 다중 인증으로 다시 로그인해야 합니다.");
+  }
+
   const appCheckFailure = await authorizeAdminAppCheck(appCheckHeader, dependencies);
   if (appCheckFailure) {
     return {ok: false, failure: appCheckFailure};
@@ -77,6 +91,10 @@ export async function authorizeAdmin(
     return authorizationFailure(403, "admin_role_required", "관리자 권한이 필요합니다.");
   }
 
+  if (!appUser.adminRole) {
+    return authorizationFailure(403, "admin_detail_role_required", "활성 관리자 업무 역할이 필요합니다.");
+  }
+
   return {
     ok: true,
     actor: {
@@ -84,6 +102,22 @@ export async function authorizeAdmin(
       firebaseUid,
     },
   };
+}
+
+export function requireAdminRole(
+  actor: AppUserIdentity,
+  allowedRoles: readonly AdminDetailRole[],
+): AdminFailure | null {
+  if (!actor.adminRole || !allowedRoles.includes(actor.adminRole)) {
+    return {
+      status: 403,
+      body: {
+        error: "admin_detail_role_forbidden",
+        message: "이 작업을 수행할 관리자 업무 권한이 없습니다.",
+      },
+    };
+  }
+  return null;
 }
 
 function extractBearerToken(authorizationHeader: string | null):

@@ -44,12 +44,7 @@ type ManagerReviewModalProps = {
   onSaveReview: (status: ReviewStatus) => Promise<void>;
   isImageDocument: (preview: DocumentPreview) => boolean;
   isPdfDocument: (preview: DocumentPreview) => boolean;
-  getDocumentFolderPaths: (managerId: string, documentKey: ManagerDocumentKey) => string[];
-  getFirebaseStorageConsoleFolderUrl: (
-    managerId: string,
-    documentKey: ManagerDocumentKey,
-    explicitPath?: string,
-  ) => string;
+  watermarkLabel: string;
 };
 
 export function ManagerReviewModal({
@@ -77,8 +72,7 @@ export function ManagerReviewModal({
   onSaveReview,
   isImageDocument,
   isPdfDocument,
-  getDocumentFolderPaths,
-  getFirebaseStorageConsoleFolderUrl,
+  watermarkLabel,
 }: ManagerReviewModalProps) {
   const activePreview = documentPreviews[activeDoc];
 
@@ -184,21 +178,13 @@ export function ManagerReviewModal({
                 <div>
                   <h3 className="text-base font-semibold text-gray-900">{documentLabelMap[activeDoc]} 원본</h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    경로 규약: <span className="font-mono">{getDocumentFolderPaths(selectedManager.id, activeDoc).join(" 또는 ")}/파일명</span>
+                    확인 사유를 기록한 뒤 서버가 전달한 원본만 이 화면에서 미리봅니다.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center">
                   <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${previewBadgeClass[activePreview.status]}`}>
                     {previewBadgeLabel[activePreview.status]}
                   </span>
-                  <a
-                    href={getFirebaseStorageConsoleFolderUrl(selectedManager.id, activeDoc, activePreview.fullPath)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100"
-                  >
-                    Storage 폴더 열기
-                  </a>
                 </div>
               </div>
 
@@ -211,14 +197,6 @@ export function ManagerReviewModal({
               {activePreview.status === "missing" && (
                 <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                   <p>{activePreview.message}</p>
-                  <a
-                    href={getFirebaseStorageConsoleFolderUrl(selectedManager.id, activeDoc, activePreview.fullPath)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-100"
-                  >
-                    Firebase 콘솔에서 폴더 열기
-                  </a>
                 </div>
               )}
 
@@ -245,22 +223,32 @@ export function ManagerReviewModal({
                   </div>
 
                   {isImageDocument(activePreview) && (
-                    <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                    <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
                       <img
                         src={activePreview.downloadUrl}
                         alt={`${documentLabelMap[activeDoc]} 미리보기`}
                         className="h-[420px] w-full object-contain"
                       />
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
+                        <span className="rotate-[-18deg] border border-white/50 bg-slate-900/45 px-5 py-2 text-sm font-semibold text-white/80 shadow-sm">
+                          {watermarkLabel}
+                        </span>
+                      </div>
                     </div>
                   )}
 
                   {!isImageDocument(activePreview) && isPdfDocument(activePreview) && (
-                    <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                    <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
                       <iframe
                         title={`${documentLabelMap[activeDoc]} PDF 미리보기`}
                         src={`${activePreview.downloadUrl}#toolbar=0`}
                         className="h-[420px] w-full"
                       />
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
+                        <span className="rotate-[-18deg] border border-white/50 bg-slate-900/45 px-5 py-2 text-sm font-semibold text-white/80 shadow-sm">
+                          {watermarkLabel}
+                        </span>
+                      </div>
                     </div>
                   )}
 
@@ -270,14 +258,9 @@ export function ManagerReviewModal({
                     </div>
                   )}
 
-                  <a
-                    href={activePreview.downloadUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100"
-                  >
-                    원본 열기
-                  </a>
+                  <p className="text-xs text-gray-500">
+                    원본은 관리자 서버가 인라인 미리보기만 중계하며 별도 다운로드 링크를 제공하지 않습니다.
+                  </p>
                 </div>
               )}
             </div>

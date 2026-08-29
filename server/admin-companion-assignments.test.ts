@@ -24,7 +24,7 @@ const successDependencies: AdminCompanionAssignmentDependencies = {
   },
   async findAppUserByFirebaseUid(uid) {
     assert.equal(uid, "admin-uid");
-    return {id: ADMIN_ID, role: "ADMIN"};
+    return {id: ADMIN_ID, role: "ADMIN", adminRole: "OPERATIONS", breakGlassExpiresAt: null};
   },
   async assignCompanionSession(command) {
     assert.deepEqual(command, {
@@ -88,12 +88,30 @@ test("PostgreSQL role이 ADMIN이 아니면 403을 반환한다", async () => {
   const result = await handleAdminCompanionAssignment("Bearer firebase-token", null, validBody, {
     ...successDependencies,
     async findAppUserByFirebaseUid() {
-      return {id: MANAGER_ID, role: "MANAGER"};
+      return {id: MANAGER_ID, role: "MANAGER", adminRole: null, breakGlassExpiresAt: null};
     },
   });
 
   assert.equal(result.status, 403);
   assert.equal("error" in result.body ? result.body.error : "", "admin_role_required");
+});
+
+test("DEVELOPER 역할은 매니저 배정을 실행할 수 없다", async () => {
+  let called = false;
+  const result = await handleAdminCompanionAssignment("Bearer firebase-token", null, validBody, {
+    ...successDependencies,
+    async findAppUserByFirebaseUid() {
+      return {id: ADMIN_ID, role: "ADMIN", adminRole: "DEVELOPER", breakGlassExpiresAt: null};
+    },
+    async assignCompanionSession() {
+      called = true;
+      return SESSION_ID;
+    },
+  });
+
+  assert.equal(result.status, 403);
+  assert.equal("error" in result.body ? result.body.error : "", "admin_detail_role_forbidden");
+  assert.equal(called, false);
 });
 
 test("UUID와 예약 버전을 검증한다", async () => {

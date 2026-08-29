@@ -1,34 +1,37 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {doc, getDoc} from "firebase/firestore";
 import {
-  arrayUnion,
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-  type DocumentData,
-} from "firebase/firestore";
-import {
+  getMultiFactorResolver,
   onAuthStateChanged,
+  PhoneAuthProvider,
+  PhoneMultiFactorGenerator,
+  RecaptchaVerifier,
   signInWithEmailAndPassword,
   signOut,
+  TotpMultiFactorGenerator,
+  type MultiFactorError,
+  type MultiFactorInfo,
+  type MultiFactorResolver,
   type User as FirebaseUser,
 } from "firebase/auth";
-import {
-  getDownloadURL,
-  getMetadata,
-  listAll,
-  ref,
-} from "firebase/storage";
-import { auth, db, firebaseConfig, storage } from "../firebase";
+import {auth, db} from "../firebase";
 import type { AdminSessionResult } from "./adminSession";
-import { resolveBodeulApiBaseUrl, resolveBodeulDataBackend } from "./bodeulApi";
+import {
+  BodeulApiError,
+  fetchAdminAccessContext,
+  fetchAdminManagerDocument,
+  fetchAdminManagerReviews,
+  saveAdminManagerReview,
+  resolveBodeulApiBaseUrl,
+  resolveBodeulDataBackend,
+  type AdminDetailRole,
+  type AdminPermission,
+  type AdminManagerReviewItem,
+} from "./bodeulApi";
 import { AdminAuthScreen } from "./components/AdminAuthScreen";
 import { AdminShell } from "./components/AdminShell";
 import { AppointmentPublicCodeSearchPanel } from "./components/AppointmentPublicCodeSearchPanel";
+import { AdminSecurityPanel } from "./components/AdminSecurityPanel";
 import { HospitalGuideApiPanel } from "./components/HospitalGuideApiPanel";
 import { ManagerApprovalList } from "./components/ManagerApprovalList";
 import { ManagerReviewModal } from "./components/ManagerReviewModal";
@@ -36,12 +39,17 @@ import { useAdminIdleSession } from "./hooks/useAdminIdleSession";
 import { useManagerDocumentPreviews } from "./hooks/useManagerDocumentPreviews";
 
 type ManagerDocumentKey = "idCard" | "license" | "criminalRecord";
-type ManagerDocumentStorageKey = ManagerDocumentKey | "healthCertificate";
 type ChecklistStatus = "미확인" | "확인 완료";
 type ManagerStatus = "대기" | "검토중" | "승인됨" | "반려";
 type ReviewStatus = "APPROVED" | "REJECTED";
-type MenuKey = "dashboard" | "approval" | "appointmentSearch" | "hospitalGuides";
+type MenuKey = "dashboard" | "approval" | "appointmentSearch" | "hospitalGuides" | "security";
 type PreviewStatus = "idle" | "loading" | "ready" | "missing" | "error";
+
+type MfaFactorOption = {
+  readonly uid: string;
+  readonly factorId: string;
+  readonly label: string;
+};
 
 type StoredManagerDocumentFile = {
   fullPath: string;
@@ -86,12 +94,6 @@ const DOCUMENT_LABEL_MAP: Record<ManagerDocumentKey, string> = {
   criminalRecord: "범죄경력 조회",
 };
 
-const DOCUMENT_STORAGE_KEY_CANDIDATES: Record<ManagerDocumentKey, ManagerDocumentStorageKey[]> = {
-  idCard: ["idCard"],
-  license: ["license", "healthCertificate"],
-  criminalRecord: ["criminalRecord"],
-};
-
 function createPreview(status: PreviewStatus, overrides: Partial<DocumentPreview> = {}): DocumentPreview {
   return {
     status,
@@ -119,6 +121,9 @@ async function resolveAdminSession(user: FirebaseUser): Promise<AdminSessionResu
     return {
       isAdmin: false,
       adminName: "",
+      adminRole: null,
+      permissions: [],
+      breakGlassExpiresAt: null,
       message: "사용자 정보를 찾을 수 없습니다.",
     };
   }
@@ -128,6 +133,9 @@ async function resolveAdminSession(user: FirebaseUser): Promise<AdminSessionResu
     return {
       isAdmin: false,
       adminName: "",
+      adminRole: null,
+      permissions: [],
+      breakGlassExpiresAt: null,
       message: "관리자 계정으로 로그인해주세요.",
     };
   }
@@ -136,82 +144,23 @@ async function resolveAdminSession(user: FirebaseUser): Promise<AdminSessionResu
     ? userData.name.trim()
     : "관리자";
 
+  const accessContext = await fetchAdminAccessContext(user);
   return {
     isAdmin: true,
     adminName,
+    adminRole: accessContext.role,
+    permissions: accessContext.permissions,
+    breakGlassExpiresAt: accessContext.breakGlassExpiresAt,
     message: "",
   };
 }
 
-function readText(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+function formatDateTime(rawValue: string): string {
+  const date = new Date(rawValue);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("ko-KR");
 }
 
-function resolveDate(rawValue: unknown): Date | null {
-  if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
-    return new Date(rawValue);
-  }
-
-  if (typeof rawValue === "string" && rawValue.trim()) {
-    const parsed = new Date(rawValue);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  }
-
-  if (
-    rawValue
-    && typeof rawValue === "object"
-    && "toDate" in rawValue
-    && typeof (rawValue as { toDate: () => Date }).toDate === "function"
-  ) {
-    return (rawValue as { toDate: () => Date }).toDate();
-  }
-
-  return null;
-}
-
-function formatDate(rawValue: unknown): string {
-  const date = resolveDate(rawValue);
-  return date ? date.toLocaleDateString("ko-KR") : "";
-}
-
-function formatDateTime(rawValue: unknown): string {
-  const date = resolveDate(rawValue);
-  return date ? date.toLocaleString("ko-KR") : "";
-}
-
-function maskEmail(email: string): string {
-  if (!email) {
-    return "-";
-  }
-
-  const [localPart, domainPart] = email.split("@");
-  if (!localPart || !domainPart) {
-    return email;
-  }
-
-  if (localPart.length <= 2) {
-    return `${localPart[0] || "*"}*@${domainPart}`;
-  }
-
-  return `${localPart.slice(0, 2)}***@${domainPart}`;
-}
-
-function maskPhone(phone: string): string {
-  if (!phone) {
-    return "-";
-  }
-
-  const digitsOnly = phone.replace(/\D/g, "");
-  if (digitsOnly.length < 7) {
-    return phone;
-  }
-
-  return `${digitsOnly.slice(0, 3)}-****-${digitsOnly.slice(-4)}`;
-}
-
-function mapManagerStatus(rawStatus: unknown): ManagerStatus {
+function mapManagerStatus(rawStatus: AdminManagerReviewItem["status"]): ManagerStatus {
   if (rawStatus === "PENDING_REVIEW") {
     return "검토중";
   }
@@ -224,136 +173,27 @@ function mapManagerStatus(rawStatus: unknown): ManagerStatus {
   return "대기";
 }
 
-function parseStoredDocumentFile(rawValue: unknown): StoredManagerDocumentFile | null {
-  if (typeof rawValue === "string" && rawValue.trim()) {
-    const trimmedPath = rawValue.trim();
-    return {
-      fullPath: trimmedPath,
-      fileName: trimmedPath.split("/").pop() || "",
+function toManager(item: AdminManagerReviewItem): Manager {
+  const files: Partial<Record<ManagerDocumentKey, StoredManagerDocumentFile>> = {};
+  item.availableDocumentKeys.forEach((key) => {
+    files[key] = {
+      fullPath: `server-mediated:${key}`,
+      fileName: DOCUMENT_LABEL_MAP[key],
       contentType: "",
       uploadedAtLabel: "",
     };
-  }
-
-  if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
-    return null;
-  }
-
-  const record = rawValue as Record<string, unknown>;
-  const fullPath = readText(record.fullPath || record.path || record.storagePath);
-  if (!fullPath) {
-    return null;
-  }
-
-  const fileName = readText(record.fileName) || fullPath.split("/").pop() || "";
-  const contentType = readText(record.contentType || record.mimeType);
-  const uploadedAtLabel = formatDateTime(
-    record.uploadedAt || record.updatedAt || record.createdAt || record.timeCreated,
-  );
-
+  });
   return {
-    fullPath,
-    fileName,
-    contentType,
-    uploadedAtLabel,
+    id: item.id,
+    name: item.name,
+    email: item.maskedEmail,
+    phone: item.maskedPhone,
+    date: item.createdAt ? new Date(item.createdAt).toLocaleDateString("ko-KR") : "",
+    status: mapManagerStatus(item.status),
+    documentSummary: item.documentSummary,
+    reviewNote: item.reviewNote,
+    documentFiles: files,
   };
-}
-
-function parseManagerDocumentFiles(data: DocumentData): Partial<Record<ManagerDocumentKey, StoredManagerDocumentFile>> {
-  const files: Partial<Record<ManagerDocumentKey, StoredManagerDocumentFile>> = {};
-
-  const metadataMap = data.managerDocumentFiles;
-  if (metadataMap && typeof metadataMap === "object" && !Array.isArray(metadataMap)) {
-    for (const key of Object.keys(DOCUMENT_LABEL_MAP) as ManagerDocumentKey[]) {
-      const parsed = DOCUMENT_STORAGE_KEY_CANDIDATES[key]
-        .map((storageKey) => parseStoredDocumentFile((metadataMap as Record<string, unknown>)[storageKey]))
-        .find((value) => value !== null);
-      if (parsed) {
-        files[key] = parsed;
-      }
-    }
-  }
-
-  const pathMap = data.managerDocumentFilePaths;
-  if (pathMap && typeof pathMap === "object" && !Array.isArray(pathMap)) {
-    for (const key of Object.keys(DOCUMENT_LABEL_MAP) as ManagerDocumentKey[]) {
-      if (files[key]) {
-        continue;
-      }
-      const parsed = DOCUMENT_STORAGE_KEY_CANDIDATES[key]
-        .map((storageKey) => parseStoredDocumentFile((pathMap as Record<string, unknown>)[storageKey]))
-        .find((value) => value !== null);
-      if (parsed) {
-        files[key] = parsed;
-      }
-    }
-  }
-
-  const legacyFields: Record<ManagerDocumentKey, unknown[]> = {
-    idCard: [
-      data.managerIdCardFilePath,
-      data.idCardFilePath,
-      data.managerIdCardStoragePath,
-    ],
-    license: [
-      data.managerLicenseFilePath,
-      data.licenseFilePath,
-      data.managerLicenseStoragePath,
-      data.managerHealthCertificateFilePath,
-      data.healthCertificateFilePath,
-      data.managerHealthCertificateStoragePath,
-    ],
-    criminalRecord: [
-      data.managerCriminalRecordFilePath,
-      data.criminalRecordFilePath,
-      data.managerCriminalRecordStoragePath,
-    ],
-  };
-
-  for (const key of Object.keys(legacyFields) as ManagerDocumentKey[]) {
-    if (files[key]) {
-      continue;
-    }
-    const candidate = legacyFields[key]
-      .map((value) => parseStoredDocumentFile(value))
-      .find((value) => value !== null);
-    if (candidate) {
-      files[key] = candidate;
-    }
-  }
-
-  return files;
-}
-
-function toManager(snapshotData: DocumentData, id: string): Manager {
-  return {
-    id,
-    name: readText(snapshotData.name) || "이름 없음",
-    email: readText(snapshotData.email),
-    phone: readText(snapshotData.phone),
-    date: formatDate(snapshotData.createdAt),
-    status: mapManagerStatus(snapshotData.managerDocumentStatus),
-    documentSummary: readText(snapshotData.managerDocumentSummary),
-    reviewNote: readText(snapshotData.managerDocumentReviewNote),
-    documentFiles: parseManagerDocumentFiles(snapshotData),
-  };
-}
-
-function getDocumentFolderPaths(managerId: string, documentKey: ManagerDocumentKey): string[] {
-  return DOCUMENT_STORAGE_KEY_CANDIDATES[documentKey].map(
-    (storageKey) => `manager-documents/${managerId}/${storageKey}`,
-  );
-}
-
-function getFirebaseStorageConsoleFolderUrl(
-  managerId: string,
-  documentKey: ManagerDocumentKey,
-  explicitPath?: string,
-): string {
-  const folderPath = explicitPath && explicitPath.includes("/")
-    ? explicitPath.split("/").slice(0, -1).join("/")
-    : getDocumentFolderPaths(managerId, documentKey)[0];
-  return `https://console.firebase.google.com/project/${firebaseConfig.projectId}/storage/${firebaseConfig.storageBucket}/files/~2F${encodeURIComponent(folderPath).replace(/%2F/g, "~2F")}`;
 }
 
 function isImageDocument(preview: DocumentPreview): boolean {
@@ -375,120 +215,49 @@ function isPdfDocument(preview: DocumentPreview): boolean {
   return preview.fileName.toLowerCase().endsWith(".pdf");
 }
 
-async function buildPreviewFromReference(
-  documentKey: ManagerDocumentKey,
-  storagePath: string,
-  fallback: StoredManagerDocumentFile | undefined,
-): Promise<DocumentPreview> {
-  const storageRef = ref(storage, storagePath);
-  const [downloadUrl, metadata] = await Promise.all([
-    getDownloadURL(storageRef),
-    getMetadata(storageRef),
-  ]);
-
-  return createPreview("ready", {
-    downloadUrl,
-    fullPath: metadata.fullPath || fallback?.fullPath || storagePath,
-    fileName: metadata.name || fallback?.fileName || storagePath.split("/").pop() || DOCUMENT_LABEL_MAP[documentKey],
-    contentType: metadata.contentType || fallback?.contentType || "",
-    uploadedAtLabel: formatDateTime(metadata.updated || metadata.timeCreated) || fallback?.uploadedAtLabel || "",
-  });
+function disposeDocumentPreview(preview: DocumentPreview): void {
+  if (preview.downloadUrl.startsWith("blob:")) {
+    URL.revokeObjectURL(preview.downloadUrl);
+  }
 }
 
-async function buildPreviewFromFolder(
-  managerId: string,
-  documentKey: ManagerDocumentKey,
-): Promise<DocumentPreview> {
-  const folderPaths = getDocumentFolderPaths(managerId, documentKey);
-  const listResults = await Promise.all(folderPaths.map(async (folderPath) => {
-    const folderRef = ref(storage, folderPath);
-    const listResult = await listAll(folderRef);
-    return {
-      folderPath,
-      items: listResult.items,
-    };
-  }));
-  const allItems = listResults.flatMap((result) => result.items);
-
-  if (!allItems.length) {
-    return createPreview("missing", {
-      message: `${DOCUMENT_LABEL_MAP[documentKey]} 파일이 아직 업로드되지 않았습니다. ${folderPaths.join(", ")} 경로를 확인해주세요.`,
-    });
-  }
-
-  const itemsWithMetadata = await Promise.all(allItems.map(async (item) => ({
-    item,
-    metadata: await getMetadata(item),
-  })));
-
-  itemsWithMetadata.sort((left, right) => {
-    const leftTime = new Date(left.metadata.updated || left.metadata.timeCreated || 0).getTime();
-    const rightTime = new Date(right.metadata.updated || right.metadata.timeCreated || 0).getTime();
-    return rightTime - leftTime;
-  });
-
-  return buildPreviewFromReference(documentKey, itemsWithMetadata[0].item.fullPath, undefined);
+function readFirebaseAuthErrorCode(error: unknown): string {
+  if (!error || typeof error !== "object" || !("code" in error)) return "";
+  return typeof error.code === "string" ? error.code : "";
 }
 
-function resolveStorageErrorMessage(
-  error: unknown,
-  managerId: string,
-  documentKey: ManagerDocumentKey,
-  explicitPath: string,
-): string {
-  const errorCode = typeof error === "object" && error && "code" in error
-    ? String((error as { code: unknown }).code)
-    : "";
-
-  if (errorCode === "storage/unauthorized") {
-    return "Storage 읽기 권한이 없습니다. storage.rules 배포 상태를 확인해주세요.";
+function toMfaFactorOption(hint: MultiFactorInfo, index: number): MfaFactorOption | null {
+  const displayName = hint.displayName?.trim();
+  if (hint.factorId === PhoneMultiFactorGenerator.FACTOR_ID) {
+    const phoneNumber = "phoneNumber" in hint && typeof hint.phoneNumber === "string"
+      ? hint.phoneNumber
+      : "등록된 전화번호";
+    return {uid: hint.uid, factorId: hint.factorId, label: displayName || `문자 인증 · ${phoneNumber}`};
   }
-
-  if (errorCode === "storage/object-not-found") {
-    if (explicitPath) {
-      return `저장된 경로(${explicitPath})에 파일이 없습니다. 기본 경로 ${getDocumentFolderPaths(managerId, documentKey).join(", ")}도 함께 확인해주세요.`;
-    }
-    return `${DOCUMENT_LABEL_MAP[documentKey]} 파일을 찾지 못했습니다. ${getDocumentFolderPaths(managerId, documentKey).join(", ")} 경로를 확인해주세요.`;
+  if (hint.factorId === TotpMultiFactorGenerator.FACTOR_ID) {
+    return {uid: hint.uid, factorId: hint.factorId, label: displayName || `인증 앱 ${index + 1}`};
   }
-
-  return `${DOCUMENT_LABEL_MAP[documentKey]} 파일을 읽지 못했습니다. Storage 경로와 권한을 확인해주세요.`;
+  return null;
 }
 
 async function resolveDocumentPreview(
+  user: FirebaseUser,
   manager: Manager,
   documentKey: ManagerDocumentKey,
+  reason: string,
 ): Promise<DocumentPreview> {
-  const storedFile = manager.documentFiles[documentKey];
-
-  if (storedFile?.fullPath) {
-    try {
-      return await buildPreviewFromReference(documentKey, storedFile.fullPath, storedFile);
-    } catch (error) {
-      const errorCode = typeof error === "object" && error && "code" in error
-        ? String((error as { code: unknown }).code)
-        : "";
-      const message = errorCode === "storage/object-not-found"
-        ? `저장된 메타데이터 경로(${storedFile.fullPath})의 파일을 찾지 못했습니다. 다른 파일로 대체하지 않고 검토를 중단합니다.`
-        : resolveStorageErrorMessage(error, manager.id, documentKey, storedFile.fullPath);
-      return createPreview("error", {
-        message,
-        fullPath: storedFile.fullPath,
-        fileName: storedFile.fileName,
-        contentType: storedFile.contentType,
-        uploadedAtLabel: storedFile.uploadedAtLabel,
-      });
-    }
-  }
-
   try {
-    return await buildPreviewFromFolder(manager.id, documentKey);
+    const document = await fetchAdminManagerDocument(user, manager.id, documentKey, reason);
+    return createPreview("ready", {
+      downloadUrl: URL.createObjectURL(document.blob),
+      fullPath: "관리자 서버 중계",
+      fileName: document.fileName,
+      contentType: document.contentType,
+      uploadedAtLabel: formatDateTime(document.updatedAt),
+    });
   } catch (error) {
     return createPreview("error", {
-      message: resolveStorageErrorMessage(error, manager.id, documentKey, storedFile?.fullPath || ""),
-      fullPath: storedFile?.fullPath || "",
-      fileName: storedFile?.fileName || "",
-      contentType: storedFile?.contentType || "",
-      uploadedAtLabel: storedFile?.uploadedAtLabel || "",
+      message: error instanceof Error ? error.message : "원본 문서를 불러오지 못했습니다.",
     });
   }
 }
@@ -512,6 +281,10 @@ function summarizeManagerText(value: string, maxLength = 72): string {
     return normalized;
   }
   return `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function retainServerMask(value: string): string {
+  return value || "-";
 }
 
 function Dashboard({ managers }: { managers: Manager[] }) {
@@ -556,11 +329,13 @@ function Dashboard({ managers }: { managers: Manager[] }) {
 }
 
 function ManagerApproval({
-  adminName,
+  currentUser,
   managers,
+  onRefresh,
 }: {
-  adminName: string;
+  currentUser: FirebaseUser;
   managers: Manager[];
+  onRefresh: () => Promise<void>;
 }) {
   const CHECKED_STATUS: ChecklistStatus = "확인 완료";
   const UNCHECKED_STATUS: ChecklistStatus = "미확인";
@@ -569,6 +344,7 @@ function ManagerApproval({
   const [docStatus, setDocStatus] = useState<Record<ManagerDocumentKey, ChecklistStatus>>(INITIAL_DOC_STATUS);
   const [rejectReason, setRejectReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [documentAccessReason, setDocumentAccessReason] = useState("");
 
   const selectedManager = useMemo(
     () => managers.find((manager) => manager.id === selectedManagerId) || null,
@@ -592,14 +368,21 @@ function ManagerApproval({
     }),
     [],
   );
+  const loadDocumentPreview = useCallback(
+    (manager: Manager, key: ManagerDocumentKey) =>
+      resolveDocumentPreview(currentUser, manager, key, documentAccessReason),
+    [currentUser, documentAccessReason],
+  );
+  const getManagerKey = useCallback((manager: Manager) => manager.id, []);
   const documentPreviews = useManagerDocumentPreviews({
     selectedManager,
     documentKeys,
-    getManagerKey: (manager) => manager.id,
+    getManagerKey,
     createIdleState: createIdlePreviewState,
     createLoadingState: createLoadingPreviewState,
     createErrorPreview,
-    resolvePreview: resolveDocumentPreview,
+    resolvePreview: loadDocumentPreview,
+    disposePreview: disposeDocumentPreview,
   });
 
   const statusBadgeClass: Record<ManagerStatus, string> = {
@@ -643,6 +426,12 @@ function ManagerApproval({
   const selectedManagerMissingCount = DOCUMENTS.length - selectedManagerUploadedCount;
 
   function openManagerReview(manager: Manager) {
+    const accessReason = window.prompt("민감 서류 원문 조회 사유를 10자 이상 입력해 주세요.")?.trim() || "";
+    if (accessReason.length < 10) {
+      window.alert("원문 조회 사유를 10자 이상 입력해야 심사를 열 수 있습니다.");
+      return;
+    }
+    setDocumentAccessReason(accessReason);
     setSelectedManagerId(manager.id);
     setActiveDoc("idCard");
     setDocStatus(INITIAL_DOC_STATUS);
@@ -656,6 +445,7 @@ function ManagerApproval({
     setDocStatus(INITIAL_DOC_STATUS);
     setRejectReason("");
     setIsSubmitting(false);
+    setDocumentAccessReason("");
   }
 
   function handleToggleDocStatus(key: ManagerDocumentKey) {
@@ -692,22 +482,15 @@ function ManagerApproval({
 
     setIsSubmitting(true);
     try {
-      await updateDoc(doc(db, "users", selectedManager.id), {
-        managerDocumentStatus: nextStatus,
-        managerDocumentReviewNote: reviewNote,
-        managerDocumentReviewedAt: serverTimestamp(),
-        managerDocumentReviewedByName: adminName,
-        managerDocumentHistory: arrayUnion({
-          eventType: nextStatus,
-          happenedAt: Date.now(),
-          actorName: adminName,
-          summary: selectedManager.documentSummary,
-          reviewNote,
-        }),
-      });
+      const saveResult = await saveAdminManagerReview(
+        currentUser, selectedManager.id, nextStatus, reviewNote,
+      );
+      await onRefresh();
 
       window.alert(
-        nextStatus === "APPROVED"
+        saveResult.auditState === "PENDING"
+          ? `심사 결과는 저장됐지만 감사 기록 재처리가 필요합니다. 작업 번호: ${saveResult.operationId}`
+          : nextStatus === "APPROVED"
           ? "매니저 서류를 승인했습니다."
           : "매니저 서류를 반려했습니다.",
       );
@@ -760,8 +543,8 @@ function ManagerApproval({
         getUploadedDocumentCount={getUploadedDocumentCount}
         getUploadedDocumentLabels={getUploadedDocumentLabels}
         summarizeManagerText={summarizeManagerText}
-        maskEmail={maskEmail}
-        maskPhone={maskPhone}
+        maskEmail={retainServerMask}
+        maskPhone={retainServerMask}
       />
 
       {selectedManager && (
@@ -790,8 +573,7 @@ function ManagerApproval({
           onSaveReview={saveReview}
           isImageDocument={(preview) => isImageDocument(preview as DocumentPreview)}
           isPdfDocument={(preview) => isPdfDocument(preview as DocumentPreview)}
-          getDocumentFolderPaths={getDocumentFolderPaths}
-          getFirebaseStorageConsoleFolderUrl={getFirebaseStorageConsoleFolderUrl}
+          watermarkLabel={`보들 관리자 원본 · ${currentUser.uid.slice(0, 8)} · ${selectedManager.id}`}
         />
       )}
     </div>
@@ -806,7 +588,17 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [authError, setAuthError] = useState("");
+  const [mfaResolver, setMfaResolver] = useState<MultiFactorResolver | null>(null);
+  const [mfaFactors, setMfaFactors] = useState<readonly MfaFactorOption[]>([]);
+  const [selectedMfaFactorUid, setSelectedMfaFactorUid] = useState("");
+  const [mfaVerificationCode, setMfaVerificationCode] = useState("");
+  const [mfaVerificationId, setMfaVerificationId] = useState("");
+  const [isMfaBusy, setIsMfaBusy] = useState(false);
+  const [mfaMessage, setMfaMessage] = useState("");
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
   const [adminName, setAdminName] = useState("");
+  const [adminRole, setAdminRole] = useState<AdminDetailRole | null>(null);
+  const [adminPermissions, setAdminPermissions] = useState<readonly AdminPermission[]>([]);
   const [managerSnapshot, setManagerSnapshot] = useState<Manager[]>([]);
   const [managerLoadError, setManagerLoadError] = useState("");
   const dataBackend = useMemo(() => resolveBodeulDataBackend(), []);
@@ -818,10 +610,29 @@ function App() {
     setCurrentMenu("dashboard");
   }, []);
 
+  const resetMfaChallenge = useCallback(() => {
+    recaptchaVerifierRef.current?.clear();
+    recaptchaVerifierRef.current = null;
+    setMfaResolver(null);
+    setMfaFactors([]);
+    setSelectedMfaFactorUid("");
+    setMfaVerificationCode("");
+    setMfaVerificationId("");
+    setIsMfaBusy(false);
+    setMfaMessage("");
+  }, []);
+
+  useEffect(() => () => {
+    recaptchaVerifierRef.current?.clear();
+    recaptchaVerifierRef.current = null;
+  }, []);
+
   const clearAdminSession = useCallback((message = "") => {
     setIsLoggedIn(false);
     setCurrentAdminUser(null);
     setAdminName("");
+    setAdminRole(null);
+    setAdminPermissions([]);
     resetAdminShellState();
     setAuthError(message);
   }, [resetAdminShellState]);
@@ -857,11 +668,17 @@ function App() {
         setCurrentAdminUser(user);
         setIsLoggedIn(true);
         setAdminName(session.adminName);
+        setAdminRole(session.adminRole);
+        setAdminPermissions(session.permissions as readonly AdminPermission[]);
         setAuthError("");
         setManagerLoadError("");
       } catch (error) {
         console.error("Admin session validation failed:", error);
-        clearAdminSession("관리자 세션을 확인하지 못했습니다.");
+        const message = error instanceof BodeulApiError && error.code === "admin_mfa_required"
+          ? "관리자 2차 인증이 필요한 세션입니다. 이메일과 비밀번호로 다시 로그인해 주세요."
+          : "관리자 세션을 확인하지 못했습니다.";
+        clearAdminSession(message);
+        await signOut(auth).catch(() => undefined);
       } finally {
         if (active) {
           setIsCheckingSession(false);
@@ -887,32 +704,34 @@ function App() {
 
   useAdminIdleSession(isLoggedIn, handleIdleLogout);
 
+  const canReviewManagers = adminPermissions.includes("MANAGER_REVIEW");
+  const canViewHospitalGuides = adminPermissions.includes("OPERATIONS_READ");
+  const canManageRoles = adminPermissions.includes("ROLE_MANAGEMENT");
+
+  const loadManagerReviews = useCallback(async () => {
+    if (!currentAdminUser) return;
+    try {
+      const items = await fetchAdminManagerReviews(currentAdminUser);
+      setManagerSnapshot(items.map(toManager));
+      setManagerLoadError("");
+    } catch (error) {
+      console.error("Manager review list failed:", error);
+      setManagerSnapshot([]);
+      setManagerLoadError(error instanceof Error
+        ? error.message
+        : "매니저 심사 목록을 불러오지 못했습니다.");
+    }
+  }, [currentAdminUser]);
+
   useEffect(() => {
-    if (!isLoggedIn) {
+    if (!isLoggedIn || !canReviewManagers || !currentAdminUser) {
       return;
     }
-
-    const q = query(collection(db, "users"), where("role", "==", "MANAGER"));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      setManagerLoadError("");
-      if (querySnapshot.empty) {
-        setManagerSnapshot([]);
-        return;
-      }
-
-      const managerList = querySnapshot.docs
-        .map((snapshot) => toManager(snapshot.data(), snapshot.id))
-        .sort((left, right) => left.name.localeCompare(right.name, "ko-KR"));
-
-      setManagerSnapshot(managerList);
-    }, (error) => {
-      console.error("Manager snapshot subscription failed:", error);
-      setManagerSnapshot([]);
-      setManagerLoadError("매니저 목록을 불러오지 못했습니다. Firestore 권한과 네트워크 상태를 확인해 주세요.");
-    });
-
-    return () => unsubscribe();
-  }, [isLoggedIn]);
+    const timeoutId = window.setTimeout(() => {
+      void loadManagerReviews();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [canReviewManagers, currentAdminUser, isLoggedIn, loadManagerReviews]);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -922,8 +741,93 @@ function App() {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       setPassword("");
     } catch (error) {
+      if (readFirebaseAuthErrorCode(error) === "auth/multi-factor-auth-required") {
+        const resolver = getMultiFactorResolver(auth, error as MultiFactorError);
+        const factors = resolver.hints
+          .map(toMfaFactorOption)
+          .filter((factor): factor is MfaFactorOption => factor !== null);
+        setPassword("");
+        if (!factors.length) {
+          setAuthError("등록된 2차 인증 수단을 이 브라우저에서 처리할 수 없습니다. 운영 담당자에게 문의해 주세요.");
+          return;
+        }
+        setMfaResolver(resolver);
+        setMfaFactors(factors);
+        setSelectedMfaFactorUid(factors[0].uid);
+        setMfaVerificationCode("");
+        setMfaVerificationId("");
+        setMfaMessage("");
+        return;
+      }
       console.error("Admin login failed:", error);
       setAuthError("이메일 또는 비밀번호가 올바르지 않습니다.");
+    }
+  }
+
+  function handleMfaFactorChange(uid: string) {
+    recaptchaVerifierRef.current?.clear();
+    recaptchaVerifierRef.current = null;
+    setSelectedMfaFactorUid(uid);
+    setMfaVerificationCode("");
+    setMfaVerificationId("");
+    setMfaMessage("");
+  }
+
+  async function handleSendMfaCode() {
+    const hint = mfaResolver?.hints.find((candidate) => candidate.uid === selectedMfaFactorUid);
+    if (!mfaResolver || !hint || hint.factorId !== PhoneMultiFactorGenerator.FACTOR_ID) {
+      setMfaMessage("문자 인증 수단을 다시 선택해 주세요.");
+      return;
+    }
+    setIsMfaBusy(true);
+    setMfaMessage("");
+    try {
+      recaptchaVerifierRef.current?.clear();
+      const verifier = new RecaptchaVerifier(auth, "admin-mfa-recaptcha", {size: "invisible"});
+      recaptchaVerifierRef.current = verifier;
+      const verificationId = await new PhoneAuthProvider(auth).verifyPhoneNumber({
+        multiFactorHint: hint,
+        session: mfaResolver.session,
+      }, verifier);
+      setMfaVerificationId(verificationId);
+    } catch (error) {
+      console.error("Admin MFA SMS send failed:", error);
+      setMfaMessage("인증 코드를 보내지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      setMfaVerificationId("");
+    } finally {
+      setIsMfaBusy(false);
+    }
+  }
+
+  async function handleVerifyMfa(event: React.FormEvent) {
+    event.preventDefault();
+    const hint = mfaResolver?.hints.find((candidate) => candidate.uid === selectedMfaFactorUid);
+    if (!mfaResolver || !hint || mfaVerificationCode.length !== 6) {
+      setMfaMessage("등록된 인증 수단과 6자리 인증 코드를 확인해 주세요.");
+      return;
+    }
+    setIsMfaBusy(true);
+    setMfaMessage("");
+    try {
+      const assertion = hint.factorId === TotpMultiFactorGenerator.FACTOR_ID
+        ? TotpMultiFactorGenerator.assertionForSignIn(hint.uid, mfaVerificationCode)
+        : hint.factorId === PhoneMultiFactorGenerator.FACTOR_ID && mfaVerificationId
+          ? PhoneMultiFactorGenerator.assertion(
+            PhoneAuthProvider.credential(mfaVerificationId, mfaVerificationCode),
+          )
+          : null;
+      if (!assertion) {
+        setMfaMessage("선택한 인증 수단의 인증 코드를 먼저 받아 주세요.");
+        return;
+      }
+      await mfaResolver.resolveSignIn(assertion);
+      resetMfaChallenge();
+      setAuthError("");
+    } catch (error) {
+      console.error("Admin MFA verification failed:", error);
+      setMfaMessage("인증 코드가 올바르지 않거나 만료되었습니다. 다시 확인해 주세요.");
+    } finally {
+      setIsMfaBusy(false);
     }
   }
 
@@ -933,11 +837,12 @@ function App() {
     } catch (error) {
       console.error("Admin logout failed:", error);
     } finally {
+      resetMfaChallenge();
       clearAdminSession("");
     }
   }
 
-  if (isCheckingSession || !isLoggedIn) {
+  if (isCheckingSession || !isLoggedIn || !adminRole) {
     return (
       <AdminAuthScreen
         isCheckingSession={isCheckingSession}
@@ -947,6 +852,23 @@ function App() {
         onEmailChange={setEmail}
         onPasswordChange={setPassword}
         onSubmit={handleLogin}
+        mfaChallenge={{
+          active: Boolean(mfaResolver),
+          factors: mfaFactors,
+          selectedFactorUid: selectedMfaFactorUid,
+          verificationCode: mfaVerificationCode,
+          smsCodeSent: Boolean(mfaVerificationId),
+          isBusy: isMfaBusy,
+          message: mfaMessage,
+        }}
+        onMfaFactorChange={handleMfaFactorChange}
+        onMfaCodeChange={setMfaVerificationCode}
+        onSendMfaCode={() => { void handleSendMfaCode(); }}
+        onVerifyMfa={handleVerifyMfa}
+        onCancelMfa={() => {
+          resetMfaChallenge();
+          void signOut(auth);
+        }}
       />
     );
   }
@@ -954,6 +876,10 @@ function App() {
   return (
     <AdminShell
       adminName={adminName}
+      adminRole={adminRole}
+      canReviewManagers={canReviewManagers}
+      canViewHospitalGuides={canViewHospitalGuides}
+      canManageRoles={canManageRoles}
       currentMenu={currentMenu}
       managerLoadError={managerLoadError}
       onMenuChange={setCurrentMenu}
@@ -962,22 +888,29 @@ function App() {
       }}
     >
       {currentMenu === "dashboard" && <Dashboard managers={managerSnapshot} />}
-      {currentMenu === "approval" && (
-        <ManagerApproval adminName={adminName} managers={managerSnapshot} />
+      {currentMenu === "approval" && canReviewManagers && (
+        currentAdminUser && <ManagerApproval
+          currentUser={currentAdminUser}
+          managers={managerSnapshot}
+          onRefresh={loadManagerReviews}
+        />
       )}
-      {currentMenu === "appointmentSearch" && (
+      {currentMenu === "appointmentSearch" && canViewHospitalGuides && (
         <AppointmentPublicCodeSearchPanel
           currentUser={currentAdminUser}
           dataBackend={dataBackend}
           apiBaseUrl={apiBaseUrl}
         />
       )}
-      {currentMenu === "hospitalGuides" && (
+      {currentMenu === "hospitalGuides" && canViewHospitalGuides && (
         <HospitalGuideApiPanel
           currentUser={currentAdminUser}
           dataBackend={dataBackend}
           apiBaseUrl={apiBaseUrl}
         />
+      )}
+      {currentMenu === "security" && canManageRoles && currentAdminUser && (
+        <AdminSecurityPanel currentUser={currentAdminUser} />
       )}
     </AdminShell>
   );

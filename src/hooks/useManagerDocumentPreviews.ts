@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type UseManagerDocumentPreviewsParams<TManager, TKey extends string, TPreview> = {
   selectedManager: TManager | null;
@@ -8,6 +8,7 @@ type UseManagerDocumentPreviewsParams<TManager, TKey extends string, TPreview> =
   createLoadingState: () => Record<TKey, TPreview>;
   createErrorPreview: (key: TKey) => TPreview;
   resolvePreview: (manager: TManager, key: TKey) => Promise<TPreview>;
+  disposePreview?: (preview: TPreview) => void;
 };
 
 export function useManagerDocumentPreviews<TManager, TKey extends string, TPreview>({
@@ -18,12 +19,27 @@ export function useManagerDocumentPreviews<TManager, TKey extends string, TPrevi
   createLoadingState,
   createErrorPreview,
   resolvePreview,
+  disposePreview,
 }: UseManagerDocumentPreviewsParams<TManager, TKey, TPreview>) {
   const [loadedManagerKey, setLoadedManagerKey] = useState("");
   const [loadedPreviews, setLoadedPreviews] = useState<Record<TKey, TPreview>>(createIdleState);
+  const loadedPreviewsRef = useRef<Record<TKey, TPreview> | null>(null);
+  const disposePreviewRef = useRef(disposePreview);
+
+  useEffect(() => {
+    disposePreviewRef.current = disposePreview;
+  }, [disposePreview]);
+
+  const disposeState = useCallback((state: Record<TKey, TPreview> | null): void => {
+    if (!state || !disposePreviewRef.current) return;
+    Object.values(state).forEach((preview) => disposePreviewRef.current?.(preview as TPreview));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+
+    disposeState(loadedPreviewsRef.current);
+    loadedPreviewsRef.current = null;
 
     if (!selectedManager) {
       return () => {
@@ -38,10 +54,6 @@ export function useManagerDocumentPreviews<TManager, TKey extends string, TPrevi
         preview: await resolvePreview(selectedManager, documentKey),
       })),
     ).then((results) => {
-      if (cancelled) {
-        return;
-      }
-
       const nextState = createIdleState();
       results.forEach((result, index) => {
         const key = documentKeys[index];
@@ -51,6 +63,11 @@ export function useManagerDocumentPreviews<TManager, TKey extends string, TPrevi
         }
         nextState[key] = createErrorPreview(key);
       });
+      if (cancelled) {
+        disposeState(nextState);
+        return;
+      }
+      loadedPreviewsRef.current = nextState;
       setLoadedPreviews(nextState);
       setLoadedManagerKey(managerKey);
     }).catch(() => {
@@ -61,6 +78,7 @@ export function useManagerDocumentPreviews<TManager, TKey extends string, TPrevi
       documentKeys.forEach((key) => {
         nextState[key] = createErrorPreview(key);
       });
+      loadedPreviewsRef.current = nextState;
       setLoadedPreviews(nextState);
       setLoadedManagerKey(managerKey);
     });
@@ -72,11 +90,17 @@ export function useManagerDocumentPreviews<TManager, TKey extends string, TPrevi
     createErrorPreview,
     createIdleState,
     createLoadingState,
+    disposeState,
     documentKeys,
     getManagerKey,
     resolvePreview,
     selectedManager,
   ]);
+
+  useEffect(() => () => {
+    disposeState(loadedPreviewsRef.current);
+    loadedPreviewsRef.current = null;
+  }, [disposeState]);
 
   if (!selectedManager) {
     return createIdleState();
