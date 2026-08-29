@@ -8,6 +8,7 @@ type DocumentPreview = {
   fullPath: string;
   uploadedAtLabel: string;
   message: string;
+  evidenceToken: string;
 };
 
 type ManagerReviewModalProps = {
@@ -83,7 +84,7 @@ export function ManagerReviewModal({
           <div>
             <h2 className="text-lg font-semibold text-gray-900">{selectedManager.name} 서류 심사</h2>
             <p className="mt-1 text-xs text-gray-500">
-              제출 요약과 Storage 원본을 함께 확인하고 현재 상태를 저장하세요.
+              제출 요약과 서버가 만든 보호 미리보기를 확인하고 현재 상태를 저장하세요.
             </p>
           </div>
           <button
@@ -103,7 +104,7 @@ export function ManagerReviewModal({
             </span>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">원본 파일</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">제출 파일</p>
             <p className="mt-2 text-lg font-semibold text-gray-900">{selectedManagerUploadedCount}/{totalDocumentCount}</p>
             <p className="mt-1 text-xs text-gray-500">
               {selectedManagerMissingCount === 0 ? "필수 파일 업로드 완료" : `${selectedManagerMissingCount}개 파일이 더 필요합니다.`}
@@ -112,7 +113,7 @@ export function ManagerReviewModal({
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">체크리스트 진행</p>
             <p className="mt-2 text-lg font-semibold text-gray-900">{checkedCount}/{totalDocumentCount}</p>
-            <p className="mt-1 text-xs text-gray-500">실제 원본을 확인한 항목 수</p>
+            <p className="mt-1 text-xs text-gray-500">보호 미리보기를 확인한 항목 수</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">제출 상태</p>
@@ -176,9 +177,9 @@ export function ManagerReviewModal({
             <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">{documentLabelMap[activeDoc]} 원본</h3>
+                  <h3 className="text-base font-semibold text-gray-900">{documentLabelMap[activeDoc]} 보호 미리보기</h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    확인 사유를 기록한 뒤 서버가 전달한 원본만 이 화면에서 미리봅니다.
+                    확인 사유를 기록한 뒤 서버가 만든 워터마크 파생본만 이 화면에서 미리봅니다.
                   </p>
                 </div>
                 <div className="flex items-center">
@@ -190,7 +191,7 @@ export function ManagerReviewModal({
 
               {activePreview.status === "loading" && (
                 <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-10 text-center text-sm text-blue-700">
-                  Storage 원본을 불러오는 중입니다.
+                  서버에서 보호 미리보기를 만드는 중입니다.
                 </div>
               )}
 
@@ -218,7 +219,7 @@ export function ManagerReviewModal({
                     <p><span className="font-medium text-gray-800">형식</span> {activePreview.contentType || "-"}</p>
                     <p><span className="font-medium text-gray-800">업로드 시각</span> {activePreview.uploadedAtLabel || "-"}</p>
                     <p className="truncate">
-                      <span className="font-medium text-gray-800">저장 경로</span> {activePreview.fullPath}
+                      <span className="font-medium text-gray-800">전달 경로</span> {activePreview.fullPath}
                     </p>
                   </div>
 
@@ -242,6 +243,8 @@ export function ManagerReviewModal({
                       <iframe
                         title={`${documentLabelMap[activeDoc]} PDF 미리보기`}
                         src={`${activePreview.downloadUrl}#toolbar=0`}
+                        sandbox=""
+                        referrerPolicy="no-referrer"
                         className="h-[420px] w-full"
                       />
                       <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
@@ -254,12 +257,12 @@ export function ManagerReviewModal({
 
                   {!isImageDocument(activePreview) && !isPdfDocument(activePreview) && (
                     <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-                      현재 형식은 인라인 미리보기를 지원하지 않습니다. 원본 열기로 확인하세요.
+                      현재 형식은 보호 미리보기를 지원하지 않습니다.
                     </div>
                   )}
 
                   <p className="text-xs text-gray-500">
-                    원본은 관리자 서버가 인라인 미리보기만 중계하며 별도 다운로드 링크를 제공하지 않습니다.
+                    원본은 브라우저에 전달하지 않으며 서버가 만든 워터마크 파생본만 표시합니다.
                   </p>
                 </div>
               )}
@@ -270,7 +273,7 @@ export function ManagerReviewModal({
             <div>
               <h3 className="text-sm font-semibold text-gray-900">검토 체크리스트</h3>
               <p className="mt-1 text-xs text-gray-500">
-                실제 원본을 확인한 항목만 체크하세요.
+                보호 미리보기를 확인한 항목만 체크하세요.
               </p>
             </div>
 
@@ -278,7 +281,7 @@ export function ManagerReviewModal({
               <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">검토 진행</p>
               <p className="mt-2 text-lg font-semibold text-gray-900">{checkedCount}/{totalDocumentCount}</p>
               <p className="mt-1 text-xs text-gray-500">
-                {allDocsChecked ? "세 항목 모두 확인 완료" : "확인한 원본 파일만 체크해 주세요."}
+                {allDocsChecked ? "세 항목 모두 확인 완료" : "확인한 보호 미리보기만 체크해 주세요."}
               </p>
             </div>
 
@@ -341,7 +344,7 @@ export function ManagerReviewModal({
             </div>
 
             <p className="text-[11px] leading-5 text-gray-500">
-              승인 전에는 세 개 문서의 원본 상태와 제출 요약을 함께 확인하세요. 요약이 없으면 심사 결과를 저장하지 않습니다.
+              승인 전에는 세 개 문서의 보호 미리보기와 제출 요약을 함께 확인하세요. 요약이 없으면 심사 결과를 저장하지 않습니다.
             </p>
           </section>
         </div>

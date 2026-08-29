@@ -17,6 +17,7 @@ flowchart LR
     Next -->|"token 서명·audience·만료 검증"| Auth["Firebase Auth"]
     Next -->|"token 서명·Web App ID 검증"| AppCheck["Firebase App Check\nreCAPTCHA Enterprise"]
     Next -->|"bodeul_admin_service\n조회 전용"| DB["Supabase PostgreSQL\n공용 DB"]
+    Next -->|"원본 형식·세대 검증\n워터마크 파생본 생성"| Storage["Firebase Storage\n매니저 증빙 원본"]
     App["사용자·매니저 앱/웹"] --> Core["Spring Core API"]
     Core --> DB
 ```
@@ -27,7 +28,7 @@ flowchart LR
 
 - Firebase Auth 기반 관리자 로그인
 - 매니저 서류 심사 대상 조회
-- Firebase Storage 원본 파일 미리보기
+- Firebase Storage 원본을 서버에서 검증·정제한 워터마크 보호 미리보기
 - 매니저 서류 승인·반려
 - PostgreSQL 예약 공개 코드 정확 검색
 - 병원 가이드 PostgreSQL read API 조회
@@ -41,6 +42,7 @@ flowchart LR
 | 웹/서버 | Next.js 16 App Router, Vercel Functions |
 | 인증 | Firebase Authentication, Firebase Admin SDK |
 | 데이터 | Supabase PostgreSQL 17, `pg` |
+| 문서 파생본 | `sharp` 0.35.3, `pdf-lib` 1.17.1 |
 | rollback | Vite 8 CI build |
 
 ## 서버 API
@@ -49,6 +51,8 @@ flowchart LR
 | --- | --- | --- | --- |
 | `GET` | `/admin/hospital-guides?limit=50` | Firebase ID token + App Check + PostgreSQL `ADMIN` | 병원 가이드 목록 조회 |
 | `POST` | `/admin/appointments/public-code` | Firebase ID token + App Check + PostgreSQL `ADMIN` | JSON 본문의 `publicCode`를 정확 검색하며 감사·요청 제한 적용 |
+| `GET/POST` | `/admin/manager-reviews` | Firebase ID token + App Check + `SUPER_ADMIN`/`OPERATIONS` | 목록 조회와 증거 기반 승인·반려 |
+| `POST` | `/admin/manager-reviews/{id}/documents/{key}` | Firebase ID token + App Check + `SUPER_ADMIN`/`OPERATIONS` | 확인 사유를 감사한 뒤 워터마크 파생본과 단기 증거 token 발급 |
 
 `limit`은 1부터 100 사이의 정수만 허용합니다. 응답은 캐시하지 않으며 DB 장애는 `503`, 관리자 권한 부족은 `403`, 잘못된 token은 `401`로 구분합니다.
 
@@ -77,7 +81,7 @@ Copy-Item .env.example .env.local
 
 - `FIREBASE_PROJECT_ID`
 - `ADMIN_DATABASE_URL`
-- `MANAGER_REVIEW_OUTBOX_HMAC_KEY` (Preview와 Production별 32바이트 이상 난수 키)
+- `MANAGER_REVIEW_OUTBOX_HMAC_KEY` (outbox와 문서 증거 서명용, Preview와 Production별 32바이트 이상 난수 키)
 - `ADMIN_APP_CHECK_MODE` (`off`, `observe`, `enforce`)
 - `FIREBASE_APPCHECK_ALLOWED_APP_IDS`
 

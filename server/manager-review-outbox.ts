@@ -14,6 +14,7 @@ export type ManagerReviewOperationPayload = {
   readonly reviewNote: string;
   readonly actorAdminUserId: string;
   readonly actorAdminRole: "SUPER_ADMIN" | "OPERATIONS" | "DEVELOPER";
+  readonly documentEvidenceDigest: string;
 };
 
 export function matchesManagerReviewOperation(
@@ -48,6 +49,7 @@ export function managerReviewOperationHash(
       payload.reviewNote,
       payload.actorAdminUserId,
       payload.actorAdminRole,
+      payload.documentEvidenceDigest,
     ]))
     .digest("hex");
 }

@@ -21,10 +21,13 @@ export function normalizeInlineManagerDocumentContentType(
 }
 
 export function managerDocumentResponseHeaders(
-  contentType: InlineManagerDocumentContentType,
-  fileName: string,
+  contentType: "application/pdf" | "image/webp",
   updatedAt: string,
+  evidenceToken: string,
 ): Record<string, string> {
+  const fileName = contentType === "application/pdf"
+    ? "manager-document-preview.pdf"
+    : "manager-document-preview.webp";
   return {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy": "sandbox; default-src 'none'",
@@ -34,5 +37,6 @@ export function managerDocumentResponseHeaders(
     "X-Content-Type-Options": "nosniff",
     "X-Admin-Document-Name": encodeURIComponent(fileName),
     "X-Admin-Document-Updated-At": updatedAt,
+    "X-Admin-Document-Evidence": evidenceToken,
   };
 }

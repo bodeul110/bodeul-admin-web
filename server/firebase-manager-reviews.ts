@@ -1,5 +1,6 @@
 import "server-only";
 
+import {createHash} from "node:crypto";
 import {FieldValue, getFirestore, Timestamp, type DocumentData} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
 
@@ -15,6 +16,17 @@ import {
   isAllowedManagerDocumentStoragePath,
 } from "./manager-document-storage-path";
 import {normalizeInlineManagerDocumentContentType} from "./manager-document-response";
+import {
+  createManagerDocumentEvidenceToken,
+  managerDocumentEvidenceSetDigest,
+  managerDocumentStoragePathDigest,
+  verifyManagerDocumentEvidenceSet,
+  type ManagerDocumentEvidence,
+} from "./manager-document-evidence";
+import {
+  createManagerDocumentPreview,
+  detectManagerDocumentContentType,
+} from "./manager-document-preview";
 import type {AdminAuditCommand} from "./postgres";
 import {createManagerReviewAuditCommand} from "./manager-review-audit";
 import {
@@ -46,8 +58,27 @@ export async function saveManagerReview(
   actorAdminRole: AdminDetailRole,
   operationId: string,
   hmacKey: string,
+  documentEvidence: readonly ManagerDocumentEvidence[],
+  documentEvidenceDigest: string,
 ): Promise<{readonly auditState: "PENDING" | "DELIVERED"}> {
-  const operationPayload = {managerUserId, status, reviewNote, actorAdminUserId, actorAdminRole};
+  const evidenceKeys = new Set(documentEvidence.map((item) => item.documentKey));
+  if (managerDocumentEvidenceSetDigest(documentEvidence) !== documentEvidenceDigest
+      || (status === "APPROVED" && documentEvidence.length !== MANAGER_DOCUMENT_KEYS.length)
+      || (status === "APPROVED" && (
+        evidenceKeys.size !== MANAGER_DOCUMENT_KEYS.length
+        || MANAGER_DOCUMENT_KEYS.some((key) => !evidenceKeys.has(key))
+      ))
+      || (status === "REJECTED" && documentEvidence.length !== 0)) {
+    throw codedError("P0005", "문서 확인 증거가 심사 요청과 일치하지 않습니다.");
+  }
+  const operationPayload = {
+    managerUserId,
+    status,
+    reviewNote,
+    actorAdminUserId,
+    actorAdminRole,
+    documentEvidenceDigest,
+  };
   const payloadHash = managerReviewOperationHash(operationPayload, hmacKey);
   const firestore = getFirestore(getFirebaseAdminApp());
   const reference = firestore.collection("users").doc(managerUserId);
@@ -69,6 +100,17 @@ export async function saveManagerReview(
     if (!readText(data.managerDocumentSummary)) {
       throw codedError("P0001", "제출 요약이 없습니다.");
     }
+    if (status === "APPROVED") {
+      for (const evidence of documentEvidence) {
+        const currentPath = resolveDocumentPath(data, managerUserId, evidence.documentKey);
+        if (evidence.actorAdminUserId !== actorAdminUserId
+            || evidence.managerUserId !== managerUserId
+            || !currentPath
+            || managerDocumentStoragePathDigest(currentPath, hmacKey) !== evidence.storagePathDigest) {
+          throw codedError("P0005", "현재 제출 문서가 확인한 문서와 다릅니다.");
+        }
+      }
+    }
     transaction.update(reference, {
       managerDocumentStatus: status,
       managerDocumentReviewNote: status === "REJECTED" ? reviewNote : "",
@@ -80,6 +122,7 @@ export async function saveManagerReview(
         actorAdminUserId,
         operationId,
         reviewNote: status === "REJECTED" ? reviewNote : "",
+        documentEvidenceDigest,
       }),
     });
     transaction.create(outboxReference, {
@@ -93,10 +136,11 @@ export async function saveManagerReview(
       resourceId: managerUserId,
       reason: reviewNote,
       outcome: "ALLOWED",
-      metadata: {status, operationId},
+      metadata: {status, operationId, documentEvidenceDigest},
       managerUserId,
       status,
       reviewNote,
+      documentEvidenceDigest,
       createdAt: FieldValue.serverTimestamp(),
       deliveredAt: null,
       expiresAt: null,
@@ -126,6 +170,7 @@ export async function markManagerReviewAuditDelivered(
     managerUserId: FieldValue.delete(),
     status: FieldValue.delete(),
     reviewNote: FieldValue.delete(),
+    documentEvidenceDigest: FieldValue.delete(),
   });
 }
 
@@ -171,6 +216,8 @@ async function cleanupDeliveredManagerReviewAuditOutbox(
 export async function loadManagerDocument(
   managerUserId: string,
   documentKey: ManagerDocumentKey,
+  actorAdminUserId: string,
+  hmacKey: string,
 ): Promise<AdminManagerDocument | null> {
   const userSnapshot = await getFirestore(getFirebaseAdminApp())
     .collection("users")
@@ -182,34 +229,111 @@ export async function loadManagerDocument(
 
   const data = userSnapshot.data() || {};
   const explicitPath = resolveDocumentPath(data, managerUserId, documentKey);
-  const bucket = getStorage(getFirebaseAdminApp()).bucket();
-  const file = explicitPath
-    ? bucket.file(explicitPath)
-    : await findNewestDocumentFile(managerUserId, documentKey);
-  if (!file) {
+  if (!explicitPath) {
     return null;
   }
+  const bucket = getStorage(getFirebaseAdminApp()).bucket();
+  const file = bucket.file(explicitPath);
 
   const [exists] = await file.exists();
   if (!exists) {
     return null;
   }
   const [metadata] = await file.getMetadata();
+  const generation = readText(metadata.generation);
   const contentType = normalizeInlineManagerDocumentContentType(readText(metadata.contentType));
   const size = Number(metadata.size || 0);
-  if (!contentType) {
+  if (!contentType || !/^[1-9][0-9]{0,30}$/u.test(generation)) {
     throw codedError("P0004", "허용하지 않는 매니저 문서 형식입니다.");
   }
   if (!Number.isFinite(size) || size < 1 || size > 10 * 1024 * 1024) {
     throw new Error("허용하지 않는 매니저 문서 형식 또는 크기입니다.");
   }
-  const [bytes] = await file.download();
-  return {
-    bytes: new Uint8Array(bytes),
-    fileName: file.name.split("/").pop() || documentKey,
+  const generationFile = bucket.file(explicitPath, {generation});
+  const [bytes] = await generationFile.download();
+  const sourceBytes = new Uint8Array(bytes);
+  const digest = createHash("sha256").update(sourceBytes).digest("hex");
+  const preview = await createManagerDocumentPreview(
+    sourceBytes,
     contentType,
+    `BoDeul Preview | ${actorAdminUserId.slice(0, 8)} | ${managerUserId.slice(0, 24)} | ${documentKey}`,
+  );
+  const {token: evidenceToken} = createManagerDocumentEvidenceToken({
+    actorAdminUserId,
+    managerUserId,
+    documentKey,
+    storagePathDigest: managerDocumentStoragePathDigest(explicitPath, hmacKey),
+    generation,
+    digest,
+    contentType,
+  }, hmacKey);
+  return {
+    bytes: preview.bytes,
+    contentType: preview.contentType,
     updatedAt: readText(metadata.updated) || readText(metadata.timeCreated),
+    evidenceToken,
   };
+}
+
+export async function verifyManagerDocumentEvidenceTokens(
+  tokens: readonly string[],
+  actorAdminUserId: string,
+  managerUserId: string,
+  hmacKey: string,
+): Promise<readonly ManagerDocumentEvidence[]> {
+  const evidence = verifyManagerDocumentEvidenceSet(tokens, hmacKey, {actorAdminUserId, managerUserId});
+  const userSnapshot = await getFirestore(getFirebaseAdminApp()).collection("users").doc(managerUserId).get();
+  if (!userSnapshot.exists || userSnapshot.data()?.role !== "MANAGER") {
+    throw codedError("P0005", "매니저 계정을 찾지 못했습니다.");
+  }
+  const data = userSnapshot.data() || {};
+  await Promise.all(evidence.map(async (item) => {
+    const storagePath = resolveDocumentPath(data, managerUserId, item.documentKey);
+    if (!storagePath || managerDocumentStoragePathDigest(storagePath, hmacKey) !== item.storagePathDigest) {
+      throw codedError("P0005", "확인한 뒤 제출 문서 포인터가 변경되었습니다.");
+    }
+    await assertCurrentStorageEvidence(item, storagePath);
+  }));
+  return evidence;
+}
+
+async function assertCurrentStorageEvidence(
+  evidence: ManagerDocumentEvidence,
+  storagePath: string,
+): Promise<void> {
+  if (!isAllowedManagerDocumentStoragePath(
+    evidence.managerUserId,
+    evidence.documentKey,
+    storagePath,
+  )) {
+    throw codedError("P0005", "문서 확인 증거의 저장 경로가 올바르지 않습니다.");
+  }
+  try {
+    const bucket = getStorage(getFirebaseAdminApp()).bucket();
+    const currentFile = bucket.file(storagePath);
+    const [currentMetadata] = await currentFile.getMetadata();
+    if (readText(currentMetadata.generation) !== evidence.generation
+        || normalizeInlineManagerDocumentContentType(readText(currentMetadata.contentType)) !== evidence.contentType) {
+      throw codedError("P0005", "확인한 뒤 제출 문서가 변경되었습니다.");
+    }
+    const size = Number(currentMetadata.size || 0);
+    if (!Number.isFinite(size) || size < 1 || size > 10 * 1024 * 1024) {
+      throw codedError("P0005", "현재 제출 문서의 크기가 허용 범위를 벗어났습니다.");
+    }
+    const [bytes] = await bucket.file(storagePath, {generation: evidence.generation}).download();
+    const actualBytes = new Uint8Array(bytes);
+    const actualContentType = await detectManagerDocumentContentType(actualBytes);
+    const actualDigest = createHash("sha256").update(actualBytes).digest("hex");
+    if (actualContentType !== evidence.contentType || actualDigest !== evidence.digest) {
+      throw codedError("P0005", "확인한 문서와 현재 제출 문서가 다릅니다.");
+    }
+  } catch (error) {
+    if (hasErrorCode(error, "P0005")) throw error;
+    if (hasErrorCode(error, "P0004") || isStorageVersionMismatchError(error)) {
+      throw codedError("P0005", "현재 제출 문서 버전을 확인하지 못했습니다.");
+    }
+    throw error;
+  }
 }
 
 function toManagerReviewItem(id: string, data: DocumentData): AdminManagerReviewItem {
@@ -263,23 +387,6 @@ function resolveDocumentPath(
     .find((path) => isAllowedManagerDocumentStoragePath(managerUserId, documentKey, path)) || "";
 }
 
-async function findNewestDocumentFile(managerUserId: string, documentKey: ManagerDocumentKey) {
-  const bucket = getStorage(getFirebaseAdminApp()).bucket();
-  const candidates = [];
-  for (const storageKey of documentStorageKeys(documentKey)) {
-    const [files] = await bucket.getFiles({prefix: `manager-documents/${managerUserId}/${storageKey}/`});
-    candidates.push(...files.filter((file) =>
-      isAllowedManagerDocumentStoragePath(managerUserId, documentKey, file.name)));
-  }
-  if (!candidates.length) return null;
-  const withMetadata = await Promise.all(candidates.map(async (file) => {
-    const [metadata] = await file.getMetadata();
-    return {file, updated: Date.parse(readText(metadata.updated) || readText(metadata.timeCreated)) || 0};
-  }));
-  withMetadata.sort((left, right) => right.updated - left.updated);
-  return withMetadata[0]?.file || null;
-}
-
 function pathFromValue(value: unknown): string {
   if (typeof value === "string") return value.trim();
   if (!value || typeof value !== "object" || Array.isArray(value)) return "";
@@ -328,16 +435,19 @@ function auditCommandFromOutbox(
   const resourceId = readText(data.resourceId);
   const status = readText(data.status);
   const operationId = readText(data.operationId);
+  const documentEvidenceDigest = readText(data.documentEvidenceDigest);
   const operationPayload = {
     managerUserId: resourceId,
     status: status === "REJECTED" ? "REJECTED" as const : "APPROVED" as const,
     reviewNote: readText(data.reason),
     actorAdminUserId,
     actorAdminRole: actorAdminRole === "SUPER_ADMIN" ? "SUPER_ADMIN" as const : "OPERATIONS" as const,
+    documentEvidenceDigest,
   };
   if (!actorAdminUserId || !resourceId || !isUuid(item.id) || operationId !== item.id
       || (actorAdminRole !== "SUPER_ADMIN" && actorAdminRole !== "OPERATIONS")
       || (status !== "APPROVED" && status !== "REJECTED")
+      || !/^[0-9a-f]{64}$/u.test(documentEvidenceDigest)
       || !matchesManagerReviewOperation(data, operationPayload, hmacKey)) {
     throw new Error("관리자 감사 outbox 항목이 올바르지 않습니다.");
   }
@@ -348,6 +458,7 @@ function auditCommandFromOutbox(
     reviewNote: operationPayload.reviewNote,
     actorAdminRole: operationPayload.actorAdminRole,
     operationId,
+    documentEvidenceDigest,
   }, hmacKey);
 }
 
@@ -357,4 +468,15 @@ function isUuid(value: string): boolean {
 
 function codedError(code: string, message: string): Error & {code: string} {
   return Object.assign(new Error(message), {code});
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return error !== null && typeof error === "object" && "code" in error
+    && (error as {readonly code?: unknown}).code === code;
+}
+
+function isStorageVersionMismatchError(error: unknown): boolean {
+  if (error === null || typeof error !== "object" || !("code" in error)) return false;
+  const code = (error as {readonly code?: unknown}).code;
+  return code === 404 || code === 412 || code === "404" || code === "412";
 }

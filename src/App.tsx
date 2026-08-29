@@ -62,6 +62,7 @@ type DocumentPreview = StoredManagerDocumentFile & {
   status: PreviewStatus;
   downloadUrl: string;
   message: string;
+  evidenceToken: string;
 };
 
 type Manager = {
@@ -103,6 +104,7 @@ function createPreview(status: PreviewStatus, overrides: Partial<DocumentPreview
     fullPath: "",
     uploadedAtLabel: "",
     message: "",
+    evidenceToken: "",
     ...overrides,
   };
 }
@@ -254,6 +256,7 @@ async function resolveDocumentPreview(
       fileName: document.fileName,
       contentType: document.contentType,
       uploadedAtLabel: formatDateTime(document.updatedAt),
+      evidenceToken: document.evidenceToken,
     });
   } catch (error) {
     return createPreview("error", {
@@ -400,8 +403,8 @@ function ManagerApproval({
   };
   const previewBadgeLabel: Record<PreviewStatus, string> = {
     idle: "대기",
-    loading: "불러오는 중",
-    ready: "원본 확인 가능",
+    loading: "파생본 생성 중",
+    ready: "보호 미리보기 준비",
     missing: "파일 없음",
     error: "확인 실패",
   };
@@ -469,6 +472,13 @@ function ManagerApproval({
       window.alert("확인할 체크리스트를 모두 완료해 주세요.");
       return;
     }
+    const documentEvidenceTokens = DOCUMENTS.map(
+      (documentInfo) => documentPreviews[documentInfo.key].evidenceToken,
+    );
+    if (nextStatus === "APPROVED" && documentEvidenceTokens.some((token) => !token)) {
+      window.alert("승인 전에 세 문서의 보호 미리보기를 모두 다시 확인해 주세요.");
+      return;
+    }
     if (nextStatus === "REJECTED" && !reviewNote) {
       window.alert("반려 사유를 입력해 주세요.");
       return;
@@ -483,7 +493,11 @@ function ManagerApproval({
     setIsSubmitting(true);
     try {
       const saveResult = await saveAdminManagerReview(
-        currentUser, selectedManager.id, nextStatus, reviewNote,
+        currentUser,
+        selectedManager.id,
+        nextStatus,
+        reviewNote,
+        nextStatus === "APPROVED" ? documentEvidenceTokens : [],
       );
       await onRefresh();
 
@@ -508,7 +522,7 @@ function ManagerApproval({
       <header>
         <h1 className="text-base font-semibold text-gray-900">매니저 서류 확인</h1>
         <p className="mt-1 text-xs text-gray-500">
-          제출된 서류 요약과 Storage 원본을 함께 확인하고 승인 또는 반려를 진행합니다.
+          제출된 서류 요약과 서버가 만든 보호 미리보기를 확인하고 승인 또는 반려를 진행합니다.
         </p>
       </header>
 

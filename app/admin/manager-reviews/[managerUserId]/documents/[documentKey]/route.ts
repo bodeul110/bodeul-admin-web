@@ -11,6 +11,7 @@ import {
   markManagerReviewAuditDelivered,
   reconcilePendingManagerReviewAudits,
   saveManagerReview,
+  verifyManagerDocumentEvidenceTokens,
 } from "../../../../../../server/firebase-manager-reviews";
 import {findAppUserByFirebaseUid, recordAdminAccessAudit} from "../../../../../../server/postgres";
 import {managerDocumentResponseHeaders} from "../../../../../../server/manager-document-response";
@@ -40,6 +41,7 @@ export async function POST(request: Request, context: RouteContext) {
       findAppUserByFirebaseUid,
       listManagerReviews,
       saveManagerReview,
+      verifyManagerDocumentEvidenceTokens,
       getManagerReviewOutboxHmacKey: () => requireManagerReviewOutboxHmacKey(
         process.env.MANAGER_REVIEW_OUTBOX_HMAC_KEY,
       ),
@@ -62,8 +64,8 @@ export async function POST(request: Request, context: RouteContext) {
     status: 200,
     headers: managerDocumentResponseHeaders(
       document.contentType,
-      document.fileName,
       document.updatedAt,
+      document.evidenceToken,
     ),
   });
 }

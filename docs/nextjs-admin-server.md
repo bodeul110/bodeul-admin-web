@@ -13,9 +13,13 @@
 - App Check는 `off`·`observe`·`enforce`를 분리하고 VALID 요청 확인 전에는 `observe`까지만 사용한다.
 - PostgreSQL `app_users.firebase_uid`의 역할이 `ADMIN`이고 `admin_role_assignments`의 세부 역할이 활성 상태일 때만 요청을 허용한다.
 - `SUPER_ADMIN`, `OPERATIONS`, `DEVELOPER` 권한을 서버에서 분리하고 세부 역할이 없으면 실패하도록 닫는다.
-- 매니저 증빙 원본은 Firebase Admin SDK가 서버에서만 읽고, 확인 사유와 감사 기록을 남긴 뒤 브라우저에 inline 응답한다.
-- 원문 확인 사유는 UTF-8 JSON 본문으로 전달하고, 성공·거부·실패 결과를 PostgreSQL 감사 기록에 구분한다. 감사 기록에 실패하면 원문 bytes를 반환하지 않는다.
-- 브라우저 미리보기에는 관리자 UID 일부와 매니저 ID 워터마크를 표시하고, 대상 변경·모달 종료·화면 해제 시 Blob URL을 즉시 폐기한다. 서버는 PDF, JPEG, PNG, WebP만 인라인 허용하며 HTML, SVG와 그 밖의 MIME은 성공 감사 전에 거부하고 `415`와 `FAILED` 감사를 남긴다. 응답은 `nosniff`, 동일 출처 제한과 `sandbox; default-src 'none'` CSP를 사용한다.
+- 매니저 증빙 원본은 Firebase Admin SDK가 서버에서만 읽는다. 서버는 metadata와 magic bytes를 함께 확인하고 이미지에는 `sharp`, PDF에는 `pdf-lib`로 실제 워터마크가 포함된 파생본을 만든 뒤 파생본만 브라우저에 inline 응답한다.
+- PDF 파생본은 새 문서에 정제한 페이지만 복사한다. catalog `OpenAction`·`AA`·`Names`·`AcroForm`·`Outlines`·`Metadata`·`Perms`와 page `Annots`·`AA`·`Metadata`를 제거하며 PDF iframe에도 최소 `sandbox`와 `no-referrer`를 적용한다.
+- 원문 확인 사유는 UTF-8 JSON 본문으로 전달하고, 성공·거부·실패 결과를 PostgreSQL 감사 기록에 구분한다. 감사 기록에 실패하면 파생본 bytes와 증거 token을 반환하지 않는다.
+- 미리보기마다 actor·매니저·문서 종류·Storage 경로 HMAC digest·객체 generation·원본 SHA-256 digest·10분 만료를 서버 HMAC으로 서명한 불투명 증거 token을 발급한다. 브라우저는 내용을 해석하지 않고 세 문서 token을 승인 요청에 그대로 보낸다.
+- 승인 서버는 token 서명·범위·만료와 현재 Storage generation·magic bytes·digest를 다시 확인한다. Firestore transaction에서도 현재 문서 pointer의 HMAC digest가 증거와 같은 경우에만 승인하며, 세 문서 중 누락·미열람·변경된 버전이 있으면 `409`로 거부한다.
+- 서버는 PDF, JPEG, PNG, WebP만 허용하며 HTML, SVG, MIME 위장과 그 밖의 형식은 성공 감사 전에 거부하고 `415`와 `FAILED` 감사를 남긴다. 응답은 `nosniff`, 동일 출처 제한과 `sandbox; default-src 'none'` CSP를 사용하고, 대상 변경·모달 종료·화면 해제 시 Blob URL을 즉시 폐기한다.
+- `OPERATIONS`와 일반 `SUPER_ADMIN` 심사 화면에는 파생본만 반환한다. `RAW_DOWNLOAD`는 향후 break-glass 원본 반출 경계로만 예약하며 현재 원본 다운로드 route는 제공하지 않는다.
 - 원본 저장 경로와 Firebase Storage console URL은 브라우저에 노출하지 않는다.
 - Vercel Functions는 Supabase transaction pooler 6543 포트와 `bodeul_admin_service`를 사용한다.
 - Vercel Functions는 Supabase Tokyo와 같은 `hnd1` 단일 리전에서 실행한다.
@@ -49,7 +53,7 @@
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | 서버 | Firestore·Storage 중계 route 전용 자격 증명 |
 | `ADMIN_DATABASE_URL` | 서버 | 관리자 조회 전용 PostgreSQL 연결 |
 | `ADMIN_APP_CHECK_MODE` | 서버 | `off`, `observe`, `enforce` 전환 |
-| `MANAGER_REVIEW_OUTBOX_HMAC_KEY` | 서버 | 매니저 심사 outbox payload 식별용 32바이트 이상 난수 키. Preview와 Production은 서로 다른 값을 사용 |
+| `MANAGER_REVIEW_OUTBOX_HMAC_KEY` | 서버 | 매니저 심사 outbox, Storage 경로 digest와 10분 문서 증거 token 서명용 32바이트 이상 난수 키. Preview와 Production은 서로 다른 값을 사용 |
 | `ADMIN_MFA_MODE` | 서버 | 관리자 다중 인증 관찰·강제 전환 |
 | `ADMIN_MFA_ENFORCE_READY` | 서버 | 전 관리자 MFA 등록·복구 확인 뒤 강제 전환을 명시 승인 |
 | `FIREBASE_APPCHECK_ALLOWED_APP_IDS` | 서버 | 현재 배포 환경이 신뢰하는 Firebase Web App ID |
@@ -69,7 +73,7 @@ Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. Firest
 | `GET /admin/access-context` | 활성 세부 역할 | 현재 역할과 권한만 반환 |
 | `GET /admin/hospital-guides` | `SUPER_ADMIN`, `OPERATIONS` | 운영 데이터 조회, `DEVELOPER`는 거부 |
 | `GET/POST /admin/manager-reviews` | `SUPER_ADMIN`, `OPERATIONS` | 심사 변경 기록과 미전달 감사 outbox 최대 10건 재처리 |
-| `POST /admin/manager-reviews/{id}/documents/{key}` | `SUPER_ADMIN`, `OPERATIONS` | UTF-8 JSON 본문에 10자 이상 확인 사유를 담고 원문 열람 기록 |
+| `POST /admin/manager-reviews/{id}/documents/{key}` | `SUPER_ADMIN`, `OPERATIONS` | UTF-8 JSON 본문에 10자 이상 확인 사유를 담고 보호 파생본·단기 증거 발급 기록 |
 | `GET/PUT/DELETE /admin/role-assignments` | `SUPER_ADMIN` | 역할 변경·회수 기록 |
 | `POST/DELETE /admin/break-glass` | `SUPER_ADMIN` | 2인 승인과 최대 60분 유효기간 기록 |
 | `GET /admin/audits` | `SUPER_ADMIN` | 최근 관리자 접근 기록 조회 |
@@ -129,10 +133,11 @@ Preview 배포 후:
 2. `DEVELOPER`: 매니저 목록·심사·원문과 역할 관리 `403`
 3. `OPERATIONS`: 마스킹 목록과 심사 가능, 역할 관리 `403`
 4. `DEVELOPER`: 병원 가이드 API와 메뉴도 거부·비표시
-5. 원문 미리보기: 10자 미만 사유 `400`, 정상 요청은 inline 응답과 감사 1건, 감사 실패 시 원문 미반환
-6. 마지막 `SUPER_ADMIN` 회수와 자기 자신에 대한 긴급 승인: DB에서 거부
-7. SMS 또는 TOTP가 등록된 관리자 계정: 이메일·비밀번호 뒤 2차 인증 UI를 완료하면 로그인 성공
-8. `ADMIN_MFA_MODE=enforce`: `ADMIN_MFA_ENFORCE_READY=true`가 없으면 서버 설정 오류로 fail-closed, MFA claim 없는 ID token은 `401`
+5. 보호 미리보기: 10자 미만 사유 `400`, 정상 요청은 워터마크 파생본·10분 증거 token과 감사 1건, 감사 실패 시 bytes 미반환
+6. 승인: 세 문서 증거 누락·만료·서명 오류·다른 actor/매니저·현재 generation/digest/pointer 불일치는 `409`, Firestore 변경 없음
+7. 마지막 `SUPER_ADMIN` 회수와 자기 자신에 대한 긴급 승인: DB에서 거부
+8. SMS 또는 TOTP가 등록된 관리자 계정: 이메일·비밀번호 뒤 2차 인증 UI를 완료하면 로그인 성공
+9. `ADMIN_MFA_MODE=enforce`: `ADMIN_MFA_ENFORCE_READY=true`가 없으면 서버 설정 오류로 fail-closed, MFA claim 없는 ID token은 `401`
 
 ### 2026-07-17 Preview 검증 결과
 
@@ -176,10 +181,10 @@ Preview 배포 후:
 
 ## 리스크와 후속 작업
 
-- 매니저 심사와 원문 미리보기의 서버 경유 코드는 구현됐지만 Preview 실제 계정·증빙으로 E2E 검증하기 전에는 Production에 승격하지 않는다.
+- 매니저 심사와 보호 미리보기의 서버 경유 코드는 구현됐지만 Preview 실제 계정·증빙으로 이미지/PDF 파생본, token 만료, 문서 교체 경쟁 조건과 승인 E2E를 검증하기 전에는 Production에 승격하지 않는다. PDF는 알려진 catalog·page 능동 콘텐츠를 제거하고 sandbox로 표시하지만 범용 PDF 보안 정제기를 대체하지 않으므로 지원 형식·10MB·50페이지 제한을 유지한다.
 - Firestore·Storage Rules는 브라우저 `ADMIN` 접근을 닫는다. 이 Rules 배포와 관리자 웹 서버 환경변수 반영은 같은 출시 창에서 수행해 기능 공백을 피한다. Android의 기존 관리자 화면도 Firebase 직접 접근을 사용하므로, 해당 경로를 폐기하거나 서버 API로 이전했다는 증거 없이는 Rules를 운영에 배포하지 않는다.
 - 관리자 MFA는 `observe`로 시작하고 모든 운영 관리자 등록과 재로그인 증거를 확인한 뒤 `enforce`로 전환한다.
-- 심사 변경은 Firestore 변경과 같은 트랜잭션에 `adminAuditOutbox` PENDING 항목을 만든다. PostgreSQL 감사 성공 뒤 DELIVERED로 전환하며, 같은 작업 UUID 재시도와 심사 목록 조회 시 최대 10건을 재처리한다. 항목별 오류는 격리해 다른 감사와 심사 목록 조회를 막지 않으며, 실패 항목은 PENDING으로 남겨 다시 시도한다. 감사 함수의 8번째 `operation_id`와 partial unique index가 같은 작업의 중복 insert를 막는다. PENDING에는 재처리에 필요한 필드, 당시 관리자 역할과 서버 전용 HMAC-SHA256 키로 만든 결정적 `payloadHash`를 둬 역할 회수 뒤에도 원래 권한 맥락으로 감사할 수 있게 한다. HMAC 키가 없거나 32바이트보다 짧으면 Firestore 변경 전에 요청을 중단한다. 재처리할 때 원문으로 계산한 hash가 저장된 값과 다르면 해당 항목을 격리한다. DELIVERED 전환 때 사유·대상·actor·역할 등 원문 필드는 지운다. 이후 문서는 작업 UUID·payload hash·감사 ID·시각만 남기는 tombstone으로 사용하며 관리자 감사와 같은 1년 뒤 `expiresAt`을 기록한다. 따라서 같은 UUID의 다른 심사 내용은 Firestore 변경 전에 거부되고, 심사 원문은 장기간 중복 보관되지 않는다. 목록 조회 시 만료 tombstone을 최대 50건 정리하고, 장기간 관리자 접속이 없는 환경도 정리되도록 운영 전 Firestore TTL 정책을 같은 필드에 연결한다. HMAC 키는 비밀 저장소에서 주입하고 Preview와 Production에 서로 다른 값을 사용한다. 동일 UUID 재시도 계약을 보존하려면 키를 tombstone 보존 기간 동안 고정해야 하며, 교체가 필요하면 구 키 검증을 함께 지원하는 버전 전환을 먼저 배포한다.
+- 심사 변경은 Firestore 변경과 같은 트랜잭션에 `adminAuditOutbox` PENDING 항목을 만든다. PostgreSQL 감사 성공 뒤 DELIVERED로 전환하며, 같은 작업 UUID 재시도와 심사 목록 조회 시 최대 10건을 재처리한다. 항목별 오류는 격리해 다른 감사와 심사 목록 조회를 막지 않으며, 실패 항목은 PENDING으로 남겨 다시 시도한다. 감사 함수의 8번째 `operation_id`와 partial unique index가 같은 작업의 중복 insert를 막는다. PENDING에는 재처리에 필요한 필드, 당시 관리자 역할, 세 문서 증거 집합 digest와 서버 전용 HMAC-SHA256 키로 만든 결정적 `payloadHash`를 둬 역할 회수 뒤에도 원래 권한·문서 버전 맥락으로 감사할 수 있게 한다. HMAC 키가 없거나 32바이트보다 짧으면 Firestore 변경 전에 요청을 중단한다. 재처리할 때 원문으로 계산한 hash가 저장된 값과 다르면 해당 항목을 격리한다. DELIVERED 전환 때 사유·대상·actor·역할·증거 digest 등 원문 필드는 지운다. 이후 문서는 작업 UUID·payload hash·감사 ID·시각만 남기는 tombstone으로 사용하며 관리자 감사와 같은 1년 뒤 `expiresAt`을 기록한다. 따라서 같은 UUID의 다른 심사 내용은 Firestore 변경 전에 거부되고, 심사 원문은 장기간 중복 보관되지 않는다. 목록 조회 시 만료 tombstone을 최대 50건 정리하고, 장기간 관리자 접속이 없는 환경도 정리되도록 운영 전 Firestore TTL 정책을 같은 필드에 연결한다. HMAC 키는 비밀 저장소에서 주입하고 Preview와 Production에 서로 다른 값을 사용한다. 동일 UUID 재시도 계약을 보존하려면 키를 tombstone 보존 기간 동안 고정해야 하며, 교체가 필요하면 구 키 검증을 함께 지원하는 버전 전환을 먼저 배포한다.
 - production DB에는 Flyway V15까지 적용됐지만 관리자 DB login과 Vercel `ADMIN_DATABASE_URL`은 아직 비활성이다. 운영 role 활성화와 성공·충돌 smoke 전에는 배정 route를 공개하지 않는다.
 - token revocation 즉시 확인은 현재 범위가 아니다. 관리자 세션 만료와 위험 수준을 확인한 뒤 WIF 기반 자격 증명을 검토한다.
 - App Check 클라이언트·custom backend 검증 코드는 반영했으며, 환경별 provider와 VALID 메트릭 검증은 [Issue #16](https://github.com/bodeul110/bodeul-admin-web/issues/16)에서 계속 추적한다.

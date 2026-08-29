@@ -8,6 +8,7 @@ import {
   markManagerReviewAuditDelivered,
   reconcilePendingManagerReviewAudits,
   saveManagerReview,
+  verifyManagerDocumentEvidenceTokens,
 } from "../../../server/firebase-manager-reviews";
 import {findAppUserByFirebaseUid, recordAdminAccessAudit} from "../../../server/postgres";
 import {requireManagerReviewOutboxHmacKey} from "../../../server/manager-review-outbox";
@@ -21,6 +22,7 @@ const dependencies = () => ({
   findAppUserByFirebaseUid,
   listManagerReviews,
   saveManagerReview,
+  verifyManagerDocumentEvidenceTokens,
   getManagerReviewOutboxHmacKey: () => requireManagerReviewOutboxHmacKey(
     process.env.MANAGER_REVIEW_OUTBOX_HMAC_KEY,
   ),

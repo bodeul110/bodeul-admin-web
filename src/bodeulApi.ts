@@ -87,6 +87,7 @@ export type AdminManagerDocumentPayload = {
   readonly fileName: string;
   readonly contentType: string;
   readonly updatedAt: string;
+  readonly evidenceToken: string;
 };
 
 type AdminWebApiEnv = {
@@ -292,13 +293,14 @@ export async function saveAdminManagerReview(
   managerUserId: string,
   status: "APPROVED" | "REJECTED",
   reviewNote: string,
+  documentEvidenceTokens: readonly string[],
 ): Promise<{readonly operationId: string; readonly auditState: "RECORDED" | "PENDING"}> {
   const operationId = crypto.randomUUID();
   let result: {readonly operationId: string; readonly auditState: "RECORDED" | "PENDING"} | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const payload = await authenticatedAdminJson(user, "/admin/manager-reviews", {
       method: "POST",
-      body: JSON.stringify({managerUserId, status, reviewNote, operationId}),
+      body: JSON.stringify({managerUserId, status, reviewNote, operationId, documentEvidenceTokens}),
     });
     if (!isRecord(payload)
         || payload.operationId !== operationId
@@ -334,11 +336,20 @@ export async function fetchAdminManagerDocument(
   }
   const contentType = response.headers.get("content-type") || "application/octet-stream";
   const fileNameHeader = response.headers.get("x-admin-document-name") || "";
+  const evidenceToken = response.headers.get("x-admin-document-evidence") || "";
+  if (!evidenceToken) {
+    throw new BodeulApiError(
+      "invalid_manager_document_evidence",
+      "문서 확인 증거가 없는 응답은 사용할 수 없습니다.",
+      response.status,
+    );
+  }
   return {
     blob: await response.blob(),
     fileName: fileNameHeader ? decodeURIComponent(fileNameHeader) : documentKey,
     contentType,
     updatedAt: response.headers.get("x-admin-document-updated-at") || "",
+    evidenceToken,
   };
 }
 

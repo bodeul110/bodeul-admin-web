@@ -9,6 +9,7 @@ export type ManagerReviewAuditInput = {
   readonly reviewNote: string;
   readonly actorAdminRole: AdminDetailRole;
   readonly operationId: string;
+  readonly documentEvidenceDigest: string;
 };
 
 export function createManagerReviewAuditCommand(
@@ -21,6 +22,7 @@ export function createManagerReviewAuditCommand(
     reviewNote: input.reviewNote,
     actorAdminUserId: input.actorAdminUserId,
     actorAdminRole: input.actorAdminRole,
+    documentEvidenceDigest: input.documentEvidenceDigest,
   }, hmacKey);
   return {
     actorAdminUserId: input.actorAdminUserId,
@@ -33,6 +35,7 @@ export function createManagerReviewAuditCommand(
       status: input.status,
       operationId: input.operationId,
       actorAdminRole: input.actorAdminRole,
+      documentEvidenceDigest: input.documentEvidenceDigest,
       payloadHash,
     },
     operationId: input.operationId,

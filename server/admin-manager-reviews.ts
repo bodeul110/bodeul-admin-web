@@ -7,7 +7,10 @@ import {
 } from "./admin-auth.ts";
 import type {AdminAuditCommand} from "./postgres.ts";
 import {createManagerReviewAuditCommand} from "./manager-review-audit.ts";
-import type {InlineManagerDocumentContentType} from "./manager-document-response.ts";
+import {
+  managerDocumentEvidenceSetDigest,
+  type ManagerDocumentEvidence,
+} from "./manager-document-evidence.ts";
 
 export type ManagerDocumentKey = "idCard" | "license" | "criminalRecord";
 
@@ -25,9 +28,9 @@ export type AdminManagerReviewItem = {
 
 export type AdminManagerDocument = {
   readonly bytes: Uint8Array;
-  readonly fileName: string;
-  readonly contentType: InlineManagerDocumentContentType;
+  readonly contentType: "application/pdf" | "image/webp";
   readonly updatedAt: string;
+  readonly evidenceToken: string;
 };
 
 export type AdminManagerReviewDependencies = AdminAuthorizationDependencies & {
@@ -40,13 +43,23 @@ export type AdminManagerReviewDependencies = AdminAuthorizationDependencies & {
     actorAdminRole: AdminDetailRole,
     operationId: string,
     hmacKey: string,
+    documentEvidence: readonly ManagerDocumentEvidence[],
+    documentEvidenceDigest: string,
   ) => Promise<{readonly auditState: "PENDING" | "DELIVERED"}>;
+  readonly verifyManagerDocumentEvidenceTokens: (
+    tokens: readonly string[],
+    actorAdminUserId: string,
+    managerUserId: string,
+    hmacKey: string,
+  ) => Promise<readonly ManagerDocumentEvidence[]>;
   readonly getManagerReviewOutboxHmacKey: () => string;
   readonly markManagerReviewAuditDelivered: (operationId: string, auditId: string) => Promise<void>;
   readonly reconcilePendingManagerReviewAudits: () => Promise<number>;
   readonly loadManagerDocument: (
     managerUserId: string,
     documentKey: ManagerDocumentKey,
+    actorAdminUserId: string,
+    hmacKey: string,
   ) => Promise<AdminManagerDocument | null>;
   readonly recordAdminAccessAudit: (command: AdminAuditCommand) => Promise<string>;
 };
@@ -173,6 +186,27 @@ export async function handleSaveManagerReview(
       dependencies, authorization.actor.id, managerUserId, "FAILED", unavailable,
     );
   }
+  let documentEvidence: readonly ManagerDocumentEvidence[] = [];
+  if (status === "APPROVED") {
+    try {
+      documentEvidence = await dependencies.verifyManagerDocumentEvidenceTokens(
+        readEvidenceTokens(requestBody.documentEvidenceTokens),
+        authorization.actor.id,
+        managerUserId,
+        hmacKey,
+      );
+    } catch (error) {
+      const invalidEvidence = mapManagerDocumentEvidenceFailure(error);
+      return auditedManagerMutationFailure(
+        dependencies,
+        authorization.actor.id,
+        managerUserId,
+        invalidEvidence.status === 503 ? "FAILED" : "DENIED",
+        invalidEvidence,
+      );
+    }
+  }
+  const documentEvidenceDigest = managerDocumentEvidenceSetDigest(documentEvidence);
   let saveReceipt: {readonly auditState: "PENDING" | "DELIVERED"};
   try {
     saveReceipt = await dependencies.saveManagerReview(
@@ -183,6 +217,8 @@ export async function handleSaveManagerReview(
       actorAdminRole,
       operationId,
       hmacKey,
+      documentEvidence,
+      documentEvidenceDigest,
     );
   } catch (error) {
     const mapped = mapManagerReviewSaveFailure(error);
@@ -207,6 +243,7 @@ export async function handleSaveManagerReview(
       reviewNote,
       actorAdminRole,
       operationId,
+      documentEvidenceDigest,
     }, hmacKey));
     await dependencies.markManagerReviewAuditDelivered(operationId, auditId);
     return {status: 200, body: {updated: true, operationId, auditState: "RECORDED"}};
@@ -220,7 +257,25 @@ function mapManagerReviewSaveFailure(error: unknown): AdminManagerMutationResult
   if (code === "P0002") return failure(404, "manager_not_found", "매니저 계정을 찾지 못했습니다.");
   if (code === "P0001") return failure(409, "manager_review_not_ready", "제출 요약과 서류 상태를 확인해 주세요.");
   if (code === "P0003") return failure(409, "manager_review_operation_conflict", "같은 작업 번호의 심사 내용이 다릅니다.");
+  if (code === "P0005") return failure(409, "manager_document_evidence_stale", "확인한 문서가 현재 제출 문서와 다릅니다. 세 문서를 다시 확인해 주세요.");
   return failure(503, "manager_review_save_failed", "매니저 심사 결과를 저장하지 못했습니다.");
+}
+
+function mapManagerDocumentEvidenceFailure(error: unknown): AdminManagerMutationResult {
+  const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
+  if (code === "manager_document_evidence_expired") {
+    return failure(409, "manager_document_evidence_expired", "문서 확인 시간이 만료되었습니다. 세 문서를 다시 확인해 주세요.");
+  }
+  if (code === "manager_document_evidence_incomplete") {
+    return failure(409, "manager_document_evidence_incomplete", "승인 전에 세 문서를 모두 확인해 주세요.");
+  }
+  if (code === "P0005") {
+    return failure(409, "manager_document_evidence_stale", "확인한 뒤 문서가 변경되었습니다. 세 문서를 다시 확인해 주세요.");
+  }
+  if (code === "invalid_manager_document_evidence" || code === "manager_document_evidence_scope_mismatch") {
+    return failure(409, "manager_document_evidence_invalid", "문서 확인 증거가 올바르지 않습니다. 세 문서를 다시 확인해 주세요.");
+  }
+  return failure(503, "manager_document_evidence_verification_failed", "현재 제출 문서를 다시 확인하지 못했습니다.");
 }
 
 async function auditedManagerMutationFailure(
@@ -267,7 +322,7 @@ export async function handleLoadManagerDocument(
     resourceId: requestedManagerId && requestedDocumentKey
       ? `${requestedManagerId}:${requestedDocumentKey}`
       : "invalid",
-    reason: requestedReason.slice(0, 500) || "허용되지 않은 관리자 역할",
+    reason: "원문 조회 권한이 허용되지 않았습니다.",
   });
   if (!authorization.ok) return authorization.failure;
   const managerUserId = requestedManagerId;
@@ -278,15 +333,36 @@ export async function handleLoadManagerDocument(
       action: "RAW_VIEW",
       resourceType: "MANAGER_DOCUMENT",
       resourceId: managerUserId && documentKey ? `${managerUserId}:${documentKey}` : "invalid",
-      reason: reason.slice(0, 500),
+      reason: "원문 조회 요청 형식 검증에 실패했습니다.",
+      metadata: {failureCode: "invalid_manager_document_request"},
     });
     if (!auditRecorded) {
       return failure(503, "admin_audit_failed", "거부 감사 기록을 남기지 못해 요청을 중단했습니다.");
     }
     return failure(400, "invalid_manager_document_request", "매니저, 문서 종류와 10~500자 조회 사유를 확인해 주세요.");
   }
+  let hmacKey: string;
   try {
-    const document = await dependencies.loadManagerDocument(managerUserId, documentKey);
+    hmacKey = dependencies.getManagerReviewOutboxHmacKey();
+  } catch {
+    const auditRecorded = await recordFailedAudit(dependencies, authorization.actor.id, {
+      action: "RAW_VIEW",
+      resourceType: "MANAGER_DOCUMENT",
+      resourceId: `${managerUserId}:${documentKey}`,
+      reason,
+      metadata: {failureCode: "manager_document_evidence_key_unavailable"},
+    });
+    return auditRecorded
+      ? failure(503, "manager_document_evidence_key_unavailable", "문서 확인 보안 설정을 확인하지 못했습니다.")
+      : failure(503, "admin_audit_failed", "조회 실패 감사 기록을 남기지 못해 요청을 중단했습니다.");
+  }
+  try {
+    const document = await dependencies.loadManagerDocument(
+      managerUserId,
+      documentKey,
+      authorization.actor.id,
+      hmacKey,
+    );
     if (!document) {
       const auditRecorded = await recordFailedAudit(dependencies, authorization.actor.id, {
         action: "RAW_VIEW",
@@ -393,6 +469,12 @@ function readUuid(value: unknown): string {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(identifier)
     ? identifier
     : "";
+}
+
+function readEvidenceTokens(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.length !== 3) return [];
+  const tokens = value.map((item) => typeof item === "string" ? item.trim() : "");
+  return tokens.every((token) => token.length > 0 && token.length <= 4096) ? tokens : [];
 }
 
 function readString(value: unknown): string {
