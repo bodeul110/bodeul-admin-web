@@ -17,7 +17,7 @@ flowchart LR
     Next -->|"token 서명·audience·만료 검증"| Auth["Firebase Auth"]
     Next -->|"token 서명·Web App ID 검증"| AppCheck["Firebase App Check\nreCAPTCHA Enterprise"]
     Next -->|"bodeul_admin_service\n조회 전용"| DB["Supabase PostgreSQL\n공용 DB"]
-    Next -->|"원본 형식·세대 검증\n워터마크 파생본 생성"| Storage["Firebase Storage\n매니저 증빙 원본"]
+    Next -->|"이미지 형식·세대 검증\n워터마크 파생본 생성"| Storage["Firebase Storage\n매니저 증빙 원본"]
     App["사용자·매니저 앱/웹"] --> Core["Spring Core API"]
     Core --> DB
 ```
@@ -42,7 +42,7 @@ flowchart LR
 | 웹/서버 | Next.js 16 App Router, Vercel Functions |
 | 인증 | Firebase Authentication, Firebase Admin SDK |
 | 데이터 | Supabase PostgreSQL 17, `pg` |
-| 문서 파생본 | `sharp` 0.35.3, `pdf-lib` 1.17.1 |
+| 문서 파생본 | `sharp` 0.35.3 기반 JPEG·PNG·WebP 워터마크 파생본, PDF fail-closed |
 | rollback | Vite 8 CI build |
 
 ## 서버 API

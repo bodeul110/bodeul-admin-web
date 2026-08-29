@@ -24,11 +24,12 @@ export type AdminManagerReviewItem = {
   readonly documentSummary: string;
   readonly reviewNote: string;
   readonly availableDocumentKeys: readonly ManagerDocumentKey[];
+  readonly submissionRevision: string;
 };
 
 export type AdminManagerDocument = {
   readonly bytes: Uint8Array;
-  readonly contentType: "application/pdf" | "image/webp";
+  readonly contentType: "image/webp";
   readonly updatedAt: string;
   readonly evidenceToken: string;
 };
@@ -45,6 +46,7 @@ export type AdminManagerReviewDependencies = AdminAuthorizationDependencies & {
     hmacKey: string,
     documentEvidence: readonly ManagerDocumentEvidence[],
     documentEvidenceDigest: string,
+    submissionRevision: string,
   ) => Promise<{readonly auditState: "PENDING" | "DELIVERED"}>;
   readonly verifyManagerDocumentEvidenceTokens: (
     tokens: readonly string[],
@@ -155,7 +157,9 @@ export async function handleSaveManagerReview(
   const status = requestBody.status;
   const reviewNote = readString(requestBody.reviewNote);
   const operationId = readUuid(requestBody.operationId);
-  if (!managerUserId || !operationId || (status !== "APPROVED" && status !== "REJECTED")) {
+  const submissionRevision = readSubmissionRevision(requestBody.submissionRevision);
+  if (!managerUserId || !operationId || !submissionRevision
+      || (status !== "APPROVED" && status !== "REJECTED")) {
     const invalid = failure(400, "invalid_manager_review", "매니저 ID와 심사 상태를 확인해 주세요.");
     return auditedManagerMutationFailure(
       dependencies, authorization.actor.id, managerUserId || "invalid", "DENIED", invalid,
@@ -195,6 +199,9 @@ export async function handleSaveManagerReview(
         managerUserId,
         hmacKey,
       );
+      if (documentEvidence.some((item) => item.submissionRevision !== submissionRevision)) {
+        throw Object.assign(new Error("revision mismatch"), {code: "manager_document_evidence_stale"});
+      }
     } catch (error) {
       const invalidEvidence = mapManagerDocumentEvidenceFailure(error);
       return auditedManagerMutationFailure(
@@ -219,6 +226,7 @@ export async function handleSaveManagerReview(
       hmacKey,
       documentEvidence,
       documentEvidenceDigest,
+      submissionRevision,
     );
   } catch (error) {
     const mapped = mapManagerReviewSaveFailure(error);
@@ -244,6 +252,7 @@ export async function handleSaveManagerReview(
       actorAdminRole,
       operationId,
       documentEvidenceDigest,
+      submissionRevision,
     }, hmacKey));
     await dependencies.markManagerReviewAuditDelivered(operationId, auditId);
     return {status: 200, body: {updated: true, operationId, auditState: "RECORDED"}};
@@ -258,6 +267,12 @@ function mapManagerReviewSaveFailure(error: unknown): AdminManagerMutationResult
   if (code === "P0001") return failure(409, "manager_review_not_ready", "제출 요약과 서류 상태를 확인해 주세요.");
   if (code === "P0003") return failure(409, "manager_review_operation_conflict", "같은 작업 번호의 심사 내용이 다릅니다.");
   if (code === "P0005") return failure(409, "manager_document_evidence_stale", "확인한 문서가 현재 제출 문서와 다릅니다. 세 문서를 다시 확인해 주세요.");
+  if (code === "manager_review_not_pending") {
+    return failure(409, "manager_review_not_pending", "이미 처리됐거나 심사 대기 상태가 아닌 제출입니다.");
+  }
+  if (code === "manager_document_revision_stale" || code === "manager_document_evidence_stale") {
+    return failure(409, "manager_document_evidence_stale", "확인한 뒤 제출 상태 또는 문서가 변경되었습니다.");
+  }
   return failure(503, "manager_review_save_failed", "매니저 심사 결과를 저장하지 못했습니다.");
 }
 
@@ -475,6 +490,11 @@ function readEvidenceTokens(value: unknown): readonly string[] {
   if (!Array.isArray(value) || value.length !== 3) return [];
   const tokens = value.map((item) => typeof item === "string" ? item.trim() : "");
   return tokens.every((token) => token.length > 0 && token.length <= 4096) ? tokens : [];
+}
+
+function readSubmissionRevision(value: unknown): string {
+  const revision = readString(value);
+  return /^ts:[0-9]{1,12}:[0-9]{9}$/u.test(revision) ? revision : "";
 }
 
 function readString(value: unknown): string {

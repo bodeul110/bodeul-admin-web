@@ -13,6 +13,7 @@ const HMAC_KEY = "test-manager-review-outbox-key-0001";
 const ACTOR_ID = "5f0dcf7a-a842-4b79-985d-f94cf880db4a";
 const MANAGER_ID = "manager-user";
 const NOW = Date.parse("2026-08-29T00:00:00.000Z");
+const SUBMISSION_REVISION = "ts:1787961600:000000000";
 
 function createToken(documentKey: "idCard" | "license" | "criminalRecord") {
   const storagePath = `manager-documents/${MANAGER_ID}/${documentKey}/source.pdf`;
@@ -25,6 +26,7 @@ function createToken(documentKey: "idCard" | "license" | "criminalRecord") {
     digest: documentKey === "idCard" ? "1".repeat(64)
       : documentKey === "license" ? "2".repeat(64) : "3".repeat(64),
     contentType: "application/pdf",
+    submissionRevision: SUBMISSION_REVISION,
   }, HMAC_KEY, NOW);
 }
 

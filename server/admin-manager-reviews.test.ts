@@ -18,6 +18,7 @@ const ACTOR_ID = "5f0dcf7a-a842-4b79-985d-f94cf880db4a";
 const OPERATION_ID = "8d8fbac5-8eb1-5bb0-b584-b17919cacb7d";
 const HMAC_KEY = "test-manager-review-outbox-key-0001";
 const DOCUMENT_EVIDENCE_TOKENS = ["id-evidence", "license-evidence", "criminal-evidence"];
+const SUBMISSION_REVISION = "ts:1787961600:000000000";
 const DOCUMENT_EVIDENCE: readonly ManagerDocumentEvidence[] = ["idCard", "license", "criminalRecord"].map(
   (documentKey) => ({
     version: 1,
@@ -32,6 +33,7 @@ const DOCUMENT_EVIDENCE: readonly ManagerDocumentEvidence[] = ["idCard", "licens
     digest: documentKey === "idCard" ? "1".repeat(64)
       : documentKey === "license" ? "2".repeat(64) : "3".repeat(64),
     contentType: "application/pdf",
+    submissionRevision: SUBMISSION_REVISION,
     issuedAt: 1,
     expiresAt: 2,
   }),
@@ -45,6 +47,7 @@ function approvedRequest() {
     reviewNote: "",
     operationId: OPERATION_ID,
     documentEvidenceTokens: DOCUMENT_EVIDENCE_TOKENS,
+    submissionRevision: SUBMISSION_REVISION,
   };
 }
 
@@ -76,16 +79,17 @@ const dependencies: AdminManagerReviewDependencies = {
       documentSummary: "서류 제출 완료",
       reviewNote: "",
       availableDocumentKeys: ["idCard"],
+      submissionRevision: SUBMISSION_REVISION,
     }];
   },
   async saveManagerReview(
-    managerId, status, note, actorId, actorRole, operationId, hmacKey, documentEvidence, evidenceDigest,
+    managerId, status, note, actorId, actorRole, operationId, hmacKey, documentEvidence, evidenceDigest, submissionRevision,
   ) {
     assert.deepEqual(
-      [managerId, status, note, actorId, actorRole, operationId, hmacKey, documentEvidence, evidenceDigest],
+      [managerId, status, note, actorId, actorRole, operationId, hmacKey, documentEvidence, evidenceDigest, submissionRevision],
       [
         "manager-user", "APPROVED", "", ACTOR_ID, "OPERATIONS", OPERATION_ID, HMAC_KEY,
-        DOCUMENT_EVIDENCE, DOCUMENT_EVIDENCE_DIGEST,
+        DOCUMENT_EVIDENCE, DOCUMENT_EVIDENCE_DIGEST, SUBMISSION_REVISION,
       ],
     );
     return {auditState: "PENDING"};
@@ -106,7 +110,7 @@ const dependencies: AdminManagerReviewDependencies = {
     assert.deepEqual([managerId, documentKey, actorId, hmacKey], ["manager-user", "idCard", ACTOR_ID, HMAC_KEY]);
     return {
       bytes: new Uint8Array([1, 2, 3]),
-      contentType: "application/pdf",
+      contentType: "image/webp",
       updatedAt: "2026-08-29T00:00:00.000Z",
       evidenceToken: DOCUMENT_EVIDENCE_TOKENS[0],
     };
@@ -117,6 +121,7 @@ const dependencies: AdminManagerReviewDependencies = {
       assert.equal(command.operationId, OPERATION_ID);
       assert.equal(command.metadata?.actorAdminRole, "OPERATIONS");
       assert.equal(command.metadata?.documentEvidenceDigest, DOCUMENT_EVIDENCE_DIGEST);
+      assert.equal(command.metadata?.submissionRevision, SUBMISSION_REVISION);
     }
     return "8d8fbac5-8eb1-5bb0-b584-b17919cacb7d";
   },
@@ -205,6 +210,7 @@ test("심사 outbox HMAC 키가 없으면 Firestore 변경 전에 실패 감사�
     status: "APPROVED",
     reviewNote: "",
     operationId: OPERATION_ID,
+    submissionRevision: SUBMISSION_REVISION,
   }, {
     ...dependencies,
     getManagerReviewOutboxHmacKey() { throw new Error("missing key"); },
@@ -266,7 +272,7 @@ test("심사 거부 감사가 실패하면 원래 409 대신 fail-closed 503을 
   assert.equal("error" in result.body ? result.body.error : "", "admin_audit_failed");
 });
 
-test("원문 미리보기는 10자 이상 사유를 요구하고 감사한다", async () => {
+test("보호 미리보기는 10자 이상 사유를 요구하고 감사한다", async () => {
   let documentCalled = false;
   const auditCommands: Parameters<AdminManagerReviewDependencies["recordAdminAccessAudit"]>[0][] = [];
   const invalid = await handleLoadManagerDocument(
@@ -282,7 +288,7 @@ test("원문 미리보기는 10자 이상 사유를 요구하고 감사한다", 
   assert.equal(invalid.status, 400);
   assert.equal(documentCalled, false);
   assert.equal(valid.status, 200);
-  assert.equal("contentType" in valid.body ? valid.body.contentType : "", "application/pdf");
+  assert.equal("contentType" in valid.body ? valid.body.contentType : "", "image/webp");
   assert.equal(auditCommands[0]?.reason, "원문 조회 요청 형식 검증에 실패했습니다.");
   assert.deepEqual(auditCommands[0]?.metadata, {failureCode: "invalid_manager_document_request"});
 });

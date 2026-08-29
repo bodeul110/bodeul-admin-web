@@ -29,6 +29,7 @@ import {
 } from "./manager-document-preview";
 import type {AdminAuditCommand} from "./postgres";
 import {createManagerReviewAuditCommand} from "./manager-review-audit";
+import {validateManagerReviewTransition} from "./manager-review-transition";
 import {
   managerReviewAuditTombstoneExpiresAt,
   managerReviewOperationHash,
@@ -60,6 +61,7 @@ export async function saveManagerReview(
   hmacKey: string,
   documentEvidence: readonly ManagerDocumentEvidence[],
   documentEvidenceDigest: string,
+  submissionRevision: string,
 ): Promise<{readonly auditState: "PENDING" | "DELIVERED"}> {
   const evidenceKeys = new Set(documentEvidence.map((item) => item.documentKey));
   if (managerDocumentEvidenceSetDigest(documentEvidence) !== documentEvidenceDigest
@@ -78,6 +80,7 @@ export async function saveManagerReview(
     actorAdminUserId,
     actorAdminRole,
     documentEvidenceDigest,
+    submissionRevision,
   };
   const payloadHash = managerReviewOperationHash(operationPayload, hmacKey);
   const firestore = getFirestore(getFirebaseAdminApp());
@@ -100,22 +103,30 @@ export async function saveManagerReview(
     if (!readText(data.managerDocumentSummary)) {
       throw codedError("P0001", "제출 요약이 없습니다.");
     }
-    if (status === "APPROVED") {
-      for (const evidence of documentEvidence) {
-        const currentPath = resolveDocumentPath(data, managerUserId, evidence.documentKey);
-        if (evidence.actorAdminUserId !== actorAdminUserId
-            || evidence.managerUserId !== managerUserId
-            || !currentPath
-            || managerDocumentStoragePathDigest(currentPath, hmacKey) !== evidence.storagePathDigest) {
-          throw codedError("P0005", "현재 제출 문서가 확인한 문서와 다릅니다.");
-        }
-      }
-    }
+    const currentSubmissionRevision = canonicalManagerDocumentRevision(data.managerDocumentUpdatedAt);
+    const currentStoragePathDigests = Object.fromEntries(MANAGER_DOCUMENT_KEYS.map((documentKey) => {
+      const currentPath = resolveDocumentPath(data, managerUserId, documentKey);
+      return [documentKey, currentPath ? managerDocumentStoragePathDigest(currentPath, hmacKey) : ""];
+    }));
+    const approvalEvidenceSnapshot = validateManagerReviewTransition({
+      currentStatus: data.managerDocumentStatus,
+      currentSubmissionRevision,
+      expectedSubmissionRevision: submissionRevision,
+      decision: status,
+      actorAdminUserId,
+      managerUserId,
+      documentEvidence,
+      currentStoragePathDigests,
+    });
     transaction.update(reference, {
       managerDocumentStatus: status,
       managerDocumentReviewNote: status === "REJECTED" ? reviewNote : "",
       managerDocumentReviewedAt: FieldValue.serverTimestamp(),
       managerDocumentReviewedByAdminUserId: actorAdminUserId,
+      managerDocumentReviewedSubmissionRevision: submissionRevision,
+      managerDocumentApprovalEvidence: status === "APPROVED"
+        ? approvalEvidenceSnapshot
+        : FieldValue.delete(),
       managerDocumentHistory: FieldValue.arrayUnion({
         eventType: status,
         happenedAt: Date.now(),
@@ -123,6 +134,8 @@ export async function saveManagerReview(
         operationId,
         reviewNote: status === "REJECTED" ? reviewNote : "",
         documentEvidenceDigest,
+        submissionRevision,
+        approvalEvidenceSnapshot,
       }),
     });
     transaction.create(outboxReference, {
@@ -136,11 +149,12 @@ export async function saveManagerReview(
       resourceId: managerUserId,
       reason: reviewNote,
       outcome: "ALLOWED",
-      metadata: {status, operationId, documentEvidenceDigest},
+      metadata: {status, operationId, documentEvidenceDigest, submissionRevision},
       managerUserId,
       status,
       reviewNote,
       documentEvidenceDigest,
+      submissionRevision,
       createdAt: FieldValue.serverTimestamp(),
       deliveredAt: null,
       expiresAt: null,
@@ -171,6 +185,7 @@ export async function markManagerReviewAuditDelivered(
     status: FieldValue.delete(),
     reviewNote: FieldValue.delete(),
     documentEvidenceDigest: FieldValue.delete(),
+    submissionRevision: FieldValue.delete(),
   });
 }
 
@@ -228,6 +243,13 @@ export async function loadManagerDocument(
   }
 
   const data = userSnapshot.data() || {};
+  if (data.managerDocumentStatus !== "PENDING_REVIEW") {
+    throw codedError("P0005", "심사 대기 상태의 제출 문서만 확인할 수 있습니다.");
+  }
+  const submissionRevision = canonicalManagerDocumentRevision(data.managerDocumentUpdatedAt);
+  if (!submissionRevision) {
+    throw codedError("P0005", "제출 revision을 확인하지 못했습니다.");
+  }
   const explicitPath = resolveDocumentPath(data, managerUserId, documentKey);
   if (!explicitPath) {
     return null;
@@ -266,6 +288,7 @@ export async function loadManagerDocument(
     generation,
     digest,
     contentType,
+    submissionRevision,
   }, hmacKey);
   return {
     bytes: preview.bytes,
@@ -287,6 +310,12 @@ export async function verifyManagerDocumentEvidenceTokens(
     throw codedError("P0005", "매니저 계정을 찾지 못했습니다.");
   }
   const data = userSnapshot.data() || {};
+  const currentSubmissionRevision = canonicalManagerDocumentRevision(data.managerDocumentUpdatedAt);
+  if (data.managerDocumentStatus !== "PENDING_REVIEW"
+      || !currentSubmissionRevision
+      || evidence.some((item) => item.submissionRevision !== currentSubmissionRevision)) {
+    throw codedError("P0005", "확인한 뒤 제출 상태 또는 revision이 변경되었습니다.");
+  }
   await Promise.all(evidence.map(async (item) => {
     const storagePath = resolveDocumentPath(data, managerUserId, item.documentKey);
     if (!storagePath || managerDocumentStoragePathDigest(storagePath, hmacKey) !== item.storagePathDigest) {
@@ -354,6 +383,7 @@ function toManagerReviewItem(id: string, data: DocumentData): AdminManagerReview
     documentSummary: readText(data.managerDocumentSummary),
     reviewNote: readText(data.managerDocumentReviewNote),
     availableDocumentKeys: documentPaths,
+    submissionRevision: canonicalManagerDocumentRevision(data.managerDocumentUpdatedAt),
   };
 }
 
@@ -436,6 +466,7 @@ function auditCommandFromOutbox(
   const status = readText(data.status);
   const operationId = readText(data.operationId);
   const documentEvidenceDigest = readText(data.documentEvidenceDigest);
+  const submissionRevision = readText(data.submissionRevision);
   const operationPayload = {
     managerUserId: resourceId,
     status: status === "REJECTED" ? "REJECTED" as const : "APPROVED" as const,
@@ -443,11 +474,13 @@ function auditCommandFromOutbox(
     actorAdminUserId,
     actorAdminRole: actorAdminRole === "SUPER_ADMIN" ? "SUPER_ADMIN" as const : "OPERATIONS" as const,
     documentEvidenceDigest,
+    submissionRevision,
   };
   if (!actorAdminUserId || !resourceId || !isUuid(item.id) || operationId !== item.id
       || (actorAdminRole !== "SUPER_ADMIN" && actorAdminRole !== "OPERATIONS")
       || (status !== "APPROVED" && status !== "REJECTED")
       || !/^[0-9a-f]{64}$/u.test(documentEvidenceDigest)
+      || !/^ts:[0-9]{1,12}:[0-9]{9}$/u.test(submissionRevision)
       || !matchesManagerReviewOperation(data, operationPayload, hmacKey)) {
     throw new Error("관리자 감사 outbox 항목이 올바르지 않습니다.");
   }
@@ -459,7 +492,20 @@ function auditCommandFromOutbox(
     actorAdminRole: operationPayload.actorAdminRole,
     operationId,
     documentEvidenceDigest,
+    submissionRevision,
   }, hmacKey);
+}
+
+export function canonicalManagerDocumentRevision(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const timestamp = value as {readonly seconds?: unknown; readonly nanoseconds?: unknown};
+  const seconds = Number(timestamp.seconds);
+  const nanoseconds = Number(timestamp.nanoseconds);
+  if (!Number.isSafeInteger(seconds) || seconds < 0 || seconds > 999_999_999_999
+      || !Number.isSafeInteger(nanoseconds) || nanoseconds < 0 || nanoseconds > 999_999_999) {
+    return "";
+  }
+  return `ts:${seconds}:${String(nanoseconds).padStart(9, "0")}`;
 }
 
 function isUuid(value: string): boolean {

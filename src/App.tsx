@@ -74,6 +74,7 @@ type Manager = {
   status: ManagerStatus;
   documentSummary: string;
   reviewNote: string;
+  submissionRevision: string;
   documentFiles: Partial<Record<ManagerDocumentKey, StoredManagerDocumentFile>>;
 };
 
@@ -194,6 +195,7 @@ function toManager(item: AdminManagerReviewItem): Manager {
     status: mapManagerStatus(item.status),
     documentSummary: item.documentSummary,
     reviewNote: item.reviewNote,
+    submissionRevision: item.submissionRevision,
     documentFiles: files,
   };
 }
@@ -207,14 +209,6 @@ function isImageDocument(preview: DocumentPreview): boolean {
   const normalizedName = preview.fileName.toLowerCase();
   return [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"].some((suffix) =>
     normalizedName.endsWith(suffix));
-}
-
-function isPdfDocument(preview: DocumentPreview): boolean {
-  const normalizedType = preview.contentType.toLowerCase();
-  if (normalizedType === "application/pdf") {
-    return true;
-  }
-  return preview.fileName.toLowerCase().endsWith(".pdf");
 }
 
 function disposeDocumentPreview(preview: DocumentPreview): void {
@@ -498,6 +492,7 @@ function ManagerApproval({
         nextStatus,
         reviewNote,
         nextStatus === "APPROVED" ? documentEvidenceTokens : [],
+        selectedManager.submissionRevision,
       );
       await onRefresh();
 
@@ -586,7 +581,6 @@ function ManagerApproval({
           onToggleDocStatus={handleToggleDocStatus}
           onSaveReview={saveReview}
           isImageDocument={(preview) => isImageDocument(preview as DocumentPreview)}
-          isPdfDocument={(preview) => isPdfDocument(preview as DocumentPreview)}
           watermarkLabel={`보들 관리자 원본 · ${currentUser.uid.slice(0, 8)} · ${selectedManager.id}`}
         />
       )}

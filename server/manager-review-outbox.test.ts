@@ -20,6 +20,7 @@ test("같은 작업 UUID는 1년 tombstone 동안 동일한 심사 내용에만 
     actorAdminUserId: "5f0dcf7a-a842-4b79-985d-f94cf880db4a",
     actorAdminRole: "OPERATIONS" as const,
     documentEvidenceDigest: "a".repeat(64),
+    submissionRevision: "ts:1787961600:000000000",
   };
 
   const payloadHash = managerReviewOperationHash(expected, HMAC_KEY);
@@ -32,6 +33,9 @@ test("같은 작업 UUID는 1년 tombstone 동안 동일한 심사 내용에만 
   assert.equal(matchesManagerReviewOperation({payloadHash}, {...expected, actorAdminRole: "SUPER_ADMIN"}, HMAC_KEY), false);
   assert.equal(matchesManagerReviewOperation(
     {payloadHash}, {...expected, documentEvidenceDigest: "b".repeat(64)}, HMAC_KEY,
+  ), false);
+  assert.equal(matchesManagerReviewOperation(
+    {payloadHash}, {...expected, submissionRevision: "ts:1787961601:000000000"}, HMAC_KEY,
   ), false);
   assert.equal(matchesManagerReviewOperation({payloadHash}, expected, OTHER_HMAC_KEY), false);
   assert.equal(matchesManagerReviewOperation(null, expected, HMAC_KEY), false);

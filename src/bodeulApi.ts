@@ -80,6 +80,7 @@ export type AdminManagerReviewItem = {
   readonly documentSummary: string;
   readonly reviewNote: string;
   readonly availableDocumentKeys: readonly ("idCard" | "license" | "criminalRecord")[];
+  readonly submissionRevision: string;
 };
 
 export type AdminManagerDocumentPayload = {
@@ -294,13 +295,21 @@ export async function saveAdminManagerReview(
   status: "APPROVED" | "REJECTED",
   reviewNote: string,
   documentEvidenceTokens: readonly string[],
+  submissionRevision: string,
 ): Promise<{readonly operationId: string; readonly auditState: "RECORDED" | "PENDING"}> {
   const operationId = crypto.randomUUID();
   let result: {readonly operationId: string; readonly auditState: "RECORDED" | "PENDING"} | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const payload = await authenticatedAdminJson(user, "/admin/manager-reviews", {
       method: "POST",
-      body: JSON.stringify({managerUserId, status, reviewNote, operationId, documentEvidenceTokens}),
+      body: JSON.stringify({
+        managerUserId,
+        status,
+        reviewNote,
+        operationId,
+        documentEvidenceTokens,
+        submissionRevision,
+      }),
     });
     if (!isRecord(payload)
         || payload.operationId !== operationId
@@ -499,6 +508,7 @@ function toAdminManagerReviewItem(value: unknown): AdminManagerReviewItem {
     documentSummary: typeof value.documentSummary === "string" ? value.documentSummary : "",
     reviewNote: typeof value.reviewNote === "string" ? value.reviewNote : "",
     availableDocumentKeys,
+    submissionRevision: readRequiredString(value.submissionRevision, "submissionRevision"),
   };
 }
 

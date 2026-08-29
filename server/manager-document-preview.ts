@@ -1,18 +1,14 @@
-import {PDFDocument, PDFName, StandardFonts, degrees, rgb} from "pdf-lib";
 import sharp from "sharp";
 
 import type {InlineManagerDocumentContentType} from "./manager-document-response.ts";
 
 const MAX_IMAGE_PIXELS = 40_000_000;
-const MAX_PDF_PAGES = 50;
 const MIN_IMAGE_EDGE_PIXELS = 64;
-const MIN_PDF_PAGE_POINTS = 72;
-const MAX_PDF_PAGE_POINTS = 20_000;
 
 export type ManagerDocumentPreview = {
   readonly bytes: Uint8Array;
-  readonly contentType: "application/pdf" | "image/webp";
-  readonly fileName: "manager-document-preview.pdf" | "manager-document-preview.webp";
+  readonly contentType: "image/webp";
+  readonly fileName: "manager-document-preview.webp";
 };
 
 export async function createManagerDocumentPreview(
@@ -25,7 +21,10 @@ export async function createManagerDocumentPreview(
     throw codedError("P0004", "문서 metadata와 실제 파일 형식이 다릅니다.");
   }
   if (detectedContentType === "application/pdf") {
-    return createPdfPreview(bytes, watermarkText);
+    throw codedError(
+      "P0004",
+      "PDF는 안전한 격리 렌더러가 준비될 때까지 관리자 웹 미리보기를 지원하지 않습니다. 이미지로 다시 제출해 주세요.",
+    );
   }
   return createImagePreview(bytes, watermarkText);
 }
@@ -91,84 +90,6 @@ async function createImagePreview(bytes: Uint8Array, watermarkText: string): Pro
   } catch (error) {
     if (hasCode(error, "P0004")) throw error;
     throw codedError("P0004", "이미지 미리보기 파생본을 만들지 못했습니다.");
-  }
-}
-
-async function createPdfPreview(bytes: Uint8Array, watermarkText: string): Promise<ManagerDocumentPreview> {
-  try {
-    const sourceDocument = await PDFDocument.load(bytes, {
-      ignoreEncryption: false,
-      throwOnInvalidObject: true,
-      updateMetadata: false,
-    });
-    const sourcePages = sourceDocument.getPages();
-    if (sourcePages.length < 1 || sourcePages.length > MAX_PDF_PAGES) {
-      throw new Error("PDF 페이지 수를 허용 범위에서 확인하지 못했습니다.");
-    }
-    for (const key of ["OpenAction", "AA", "Names", "AcroForm", "Outlines", "Metadata", "Perms"]) {
-      sourceDocument.catalog.delete(PDFName.of(key));
-    }
-    for (const page of sourcePages) {
-      page.node.delete(PDFName.of("Annots"));
-      page.node.delete(PDFName.of("AA"));
-      page.node.delete(PDFName.of("Metadata"));
-    }
-
-    // 새 문서로 페이지만 복사해 원본 catalog, 첨부, 메타데이터 객체가 파생본에 남지 않게 한다.
-    const document = await PDFDocument.create();
-    const copiedPages = await document.copyPages(
-      sourceDocument,
-      sourcePages.map((_, index) => index),
-    );
-    copiedPages.forEach((page) => {
-      document.addPage(page);
-      page.node.delete(PDFName.of("Annots"));
-      page.node.delete(PDFName.of("AA"));
-      page.node.delete(PDFName.of("Metadata"));
-    });
-    const pages = document.getPages();
-    const font = await document.embedFont(StandardFonts.Helvetica);
-    for (const page of pages) {
-      const {width, height} = page.getSize();
-      if (!Number.isFinite(width) || !Number.isFinite(height)
-          || width < MIN_PDF_PAGE_POINTS || height < MIN_PDF_PAGE_POINTS
-          || width > MAX_PDF_PAGE_POINTS || height > MAX_PDF_PAGE_POINTS) {
-        throw new Error("PDF 페이지 크기를 허용 범위에서 확인하지 못했습니다.");
-      }
-      const fontSize = Math.max(11, Math.min(22, width / 28));
-      const stepY = Math.max(90, height / 6);
-      for (let y = 30; y < height; y += stepY) {
-        page.drawText(watermarkText, {
-          x: 24,
-          y,
-          size: fontSize,
-          font,
-          color: rgb(0.2, 0.25, 0.32),
-          opacity: 0.28,
-          rotate: degrees(-24),
-        });
-      }
-    }
-    document.setTitle("BoDeul protected manager document preview");
-    document.setAuthor("BoDeul Admin Server");
-    document.setCreator("BoDeul Admin Server");
-    document.setProducer("BoDeul Admin Server");
-    document.setSubject("Watermarked preview derivative");
-    document.setKeywords(["BoDeul", "protected-preview"]);
-    document.getPages().forEach((page) => {
-      page.node.delete(PDFName.of("Annots"));
-      page.node.delete(PDFName.of("AA"));
-      page.node.delete(PDFName.of("Metadata"));
-    });
-    const output = await document.save({useObjectStreams: true, addDefaultPage: false});
-    return {
-      bytes: output,
-      contentType: "application/pdf",
-      fileName: "manager-document-preview.pdf",
-    };
-  } catch (error) {
-    if (hasCode(error, "P0004")) throw error;
-    throw codedError("P0004", "PDF 미리보기 파생본을 만들지 못했습니다.");
   }
 }
 

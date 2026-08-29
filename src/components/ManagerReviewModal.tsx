@@ -44,7 +44,6 @@ type ManagerReviewModalProps = {
   onToggleDocStatus: (key: ManagerDocumentKey) => void;
   onSaveReview: (status: ReviewStatus) => Promise<void>;
   isImageDocument: (preview: DocumentPreview) => boolean;
-  isPdfDocument: (preview: DocumentPreview) => boolean;
   watermarkLabel: string;
 };
 
@@ -72,7 +71,6 @@ export function ManagerReviewModal({
   onToggleDocStatus,
   onSaveReview,
   isImageDocument,
-  isPdfDocument,
   watermarkLabel,
 }: ManagerReviewModalProps) {
   const activePreview = documentPreviews[activeDoc];
@@ -238,26 +236,9 @@ export function ManagerReviewModal({
                     </div>
                   )}
 
-                  {!isImageDocument(activePreview) && isPdfDocument(activePreview) && (
-                    <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
-                      <iframe
-                        title={`${documentLabelMap[activeDoc]} PDF 미리보기`}
-                        src={`${activePreview.downloadUrl}#toolbar=0`}
-                        sandbox=""
-                        referrerPolicy="no-referrer"
-                        className="h-[420px] w-full"
-                      />
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
-                        <span className="rotate-[-18deg] border border-white/50 bg-slate-900/45 px-5 py-2 text-sm font-semibold text-white/80 shadow-sm">
-                          {watermarkLabel}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {!isImageDocument(activePreview) && !isPdfDocument(activePreview) && (
+                  {!isImageDocument(activePreview) && (
                     <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-                      현재 형식은 보호 미리보기를 지원하지 않습니다.
+                      PDF는 안전한 격리 렌더러가 준비될 때까지 미리보기를 지원하지 않습니다. 이미지로 다시 제출해 주세요.
                     </div>
                   )}
 

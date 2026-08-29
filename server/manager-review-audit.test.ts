@@ -15,6 +15,7 @@ test("심사 감사 재처리는 최초 기록과 같은 operation ID와 내용�
     actorAdminRole: "OPERATIONS" as const,
     operationId: "8d8fbac5-8eb1-5bb0-b584-b17919cacb7d",
     documentEvidenceDigest: "a".repeat(64),
+    submissionRevision: "ts:1787961600:000000000",
   };
   assert.deepEqual(createManagerReviewAuditCommand(input, HMAC_KEY), {
     actorAdminUserId: input.actorAdminUserId,
@@ -28,6 +29,7 @@ test("심사 감사 재처리는 최초 기록과 같은 operation ID와 내용�
       operationId: input.operationId,
       actorAdminRole: "OPERATIONS",
       documentEvidenceDigest: input.documentEvidenceDigest,
+      submissionRevision: input.submissionRevision,
       payloadHash: managerReviewOperationHash(input, HMAC_KEY),
     },
     operationId: input.operationId,

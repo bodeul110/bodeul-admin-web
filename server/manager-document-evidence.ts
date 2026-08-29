@@ -19,6 +19,7 @@ export type ManagerDocumentEvidence = {
   readonly generation: string;
   readonly digest: string;
   readonly contentType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";
+  readonly submissionRevision: string;
   readonly issuedAt: number;
   readonly expiresAt: number;
 };
@@ -102,6 +103,7 @@ export function managerDocumentEvidenceSetDigest(
       item.generation,
       item.digest,
       item.contentType,
+      item.submissionRevision,
     ]);
   return createHash("sha256")
     .update(EVIDENCE_SET_DOMAIN)
@@ -136,6 +138,7 @@ function assertEvidenceShape(value: unknown): asserts value is ManagerDocumentEv
       || !GENERATION_PATTERN.test(readText(value.generation))
       || !DIGEST_PATTERN.test(readText(value.digest))
       || !isContentType(value.contentType)
+      || !SUBMISSION_REVISION_PATTERN.test(readText(value.submissionRevision))
       || !Number.isSafeInteger(value.issuedAt)
       || !Number.isSafeInteger(value.expiresAt)) {
     throw evidenceError("invalid_manager_document_evidence", "문서 확인 증거 내용이 올바르지 않습니다.");
@@ -166,3 +169,4 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const MANAGER_ID_PATTERN = /^[a-z0-9._-]{1,128}$/iu;
 const GENERATION_PATTERN = /^[1-9][0-9]{0,30}$/u;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
+const SUBMISSION_REVISION_PATTERN = /^ts:[0-9]{1,12}:[0-9]{9}$/u;
