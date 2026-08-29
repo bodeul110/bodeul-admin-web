@@ -14,6 +14,7 @@ import {
 } from "../../../../../../server/firebase-manager-reviews";
 import {findAppUserByFirebaseUid, recordAdminAccessAudit} from "../../../../../../server/postgres";
 import {managerDocumentResponseHeaders} from "../../../../../../server/manager-document-response";
+import {requireManagerReviewOutboxHmacKey} from "../../../../../../server/manager-review-outbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,8 +40,14 @@ export async function POST(request: Request, context: RouteContext) {
       findAppUserByFirebaseUid,
       listManagerReviews,
       saveManagerReview,
+      getManagerReviewOutboxHmacKey: () => requireManagerReviewOutboxHmacKey(
+        process.env.MANAGER_REVIEW_OUTBOX_HMAC_KEY,
+      ),
       markManagerReviewAuditDelivered,
-      reconcilePendingManagerReviewAudits: () => reconcilePendingManagerReviewAudits(recordAdminAccessAudit),
+      reconcilePendingManagerReviewAudits: () => reconcilePendingManagerReviewAudits(
+        recordAdminAccessAudit,
+        requireManagerReviewOutboxHmacKey(process.env.MANAGER_REVIEW_OUTBOX_HMAC_KEY),
+      ),
       loadManagerDocument,
       recordAdminAccessAudit,
     },

@@ -39,7 +39,9 @@ export type AdminManagerReviewDependencies = AdminAuthorizationDependencies & {
     actorAdminUserId: string,
     actorAdminRole: AdminDetailRole,
     operationId: string,
+    hmacKey: string,
   ) => Promise<{readonly auditState: "PENDING" | "DELIVERED"}>;
+  readonly getManagerReviewOutboxHmacKey: () => string;
   readonly markManagerReviewAuditDelivered: (operationId: string, auditId: string) => Promise<void>;
   readonly reconcilePendingManagerReviewAudits: () => Promise<number>;
   readonly loadManagerDocument: (
@@ -158,6 +160,19 @@ export async function handleSaveManagerReview(
       dependencies, authorization.actor.id, managerUserId, "DENIED", invalid,
     );
   }
+  let hmacKey: string;
+  try {
+    hmacKey = dependencies.getManagerReviewOutboxHmacKey();
+  } catch {
+    const unavailable = failure(
+      503,
+      "manager_review_outbox_key_unavailable",
+      "매니저 심사 보안 설정을 확인하지 못해 요청을 중단했습니다.",
+    );
+    return auditedManagerMutationFailure(
+      dependencies, authorization.actor.id, managerUserId, "FAILED", unavailable,
+    );
+  }
   let saveReceipt: {readonly auditState: "PENDING" | "DELIVERED"};
   try {
     saveReceipt = await dependencies.saveManagerReview(
@@ -167,6 +182,7 @@ export async function handleSaveManagerReview(
       authorization.actor.id,
       actorAdminRole,
       operationId,
+      hmacKey,
     );
   } catch (error) {
     const mapped = mapManagerReviewSaveFailure(error);
@@ -191,7 +207,7 @@ export async function handleSaveManagerReview(
       reviewNote,
       actorAdminRole,
       operationId,
-    }));
+    }, hmacKey));
     await dependencies.markManagerReviewAuditDelivered(operationId, auditId);
     return {status: 200, body: {updated: true, operationId, auditState: "RECORDED"}};
   } catch {

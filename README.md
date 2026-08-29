@@ -77,6 +77,7 @@ Copy-Item .env.example .env.local
 
 - `FIREBASE_PROJECT_ID`
 - `ADMIN_DATABASE_URL`
+- `MANAGER_REVIEW_OUTBOX_HMAC_KEY` (Preview와 Production별 32바이트 이상 난수 키)
 - `ADMIN_APP_CHECK_MODE` (`off`, `observe`, `enforce`)
 - `FIREBASE_APPCHECK_ALLOWED_APP_IDS`
 

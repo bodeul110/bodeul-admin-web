@@ -45,18 +45,19 @@ export async function saveManagerReview(
   actorAdminUserId: string,
   actorAdminRole: AdminDetailRole,
   operationId: string,
+  hmacKey: string,
 ): Promise<{readonly auditState: "PENDING" | "DELIVERED"}> {
+  const operationPayload = {managerUserId, status, reviewNote, actorAdminUserId, actorAdminRole};
+  const payloadHash = managerReviewOperationHash(operationPayload, hmacKey);
   const firestore = getFirestore(getFirebaseAdminApp());
   const reference = firestore.collection("users").doc(managerUserId);
   const outboxReference = firestore.collection("adminAuditOutbox").doc(operationId);
-  const operationPayload = {managerUserId, status, reviewNote, actorAdminUserId, actorAdminRole};
-  const payloadHash = managerReviewOperationHash(operationPayload);
   return firestore.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(reference);
     const outboxSnapshot = await transaction.get(outboxReference);
     if (outboxSnapshot.exists) {
       const existing = outboxSnapshot.data() || {};
-      if (!matchesManagerReviewOperation(existing, operationPayload)) {
+      if (!matchesManagerReviewOperation(existing, operationPayload, hmacKey)) {
         throw codedError("P0003", "같은 작업 번호의 심사 내용이 다릅니다.");
       }
       return {auditState: existing.state === "DELIVERED" ? "DELIVERED" as const : "PENDING" as const};
@@ -130,6 +131,7 @@ export async function markManagerReviewAuditDelivered(
 
 export async function reconcilePendingManagerReviewAudits(
   recordAudit: (command: AdminAuditCommand) => Promise<string>,
+  hmacKey: string,
 ): Promise<number> {
   const firestore = getFirestore(getFirebaseAdminApp());
   const outbox = firestore.collection("adminAuditOutbox");
@@ -140,7 +142,7 @@ export async function reconcilePendingManagerReviewAudits(
     .get();
   return processPendingAuditOutbox(
     snapshot.docs.map((document) => ({id: document.id, data: document.data()})),
-    auditCommandFromOutbox,
+    (item) => auditCommandFromOutbox(item, hmacKey),
     recordAudit,
     markManagerReviewAuditDelivered,
     (operationId) => {
@@ -316,7 +318,10 @@ function readText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function auditCommandFromOutbox(item: PendingAuditOutboxItem): AdminAuditCommand {
+function auditCommandFromOutbox(
+  item: PendingAuditOutboxItem,
+  hmacKey: string,
+): AdminAuditCommand {
   const data = item.data as DocumentData;
   const actorAdminUserId = readText(data.actorAdminUserId);
   const actorAdminRole = readText(data.actorAdminRole);
@@ -333,7 +338,7 @@ function auditCommandFromOutbox(item: PendingAuditOutboxItem): AdminAuditCommand
   if (!actorAdminUserId || !resourceId || !isUuid(item.id) || operationId !== item.id
       || (actorAdminRole !== "SUPER_ADMIN" && actorAdminRole !== "OPERATIONS")
       || (status !== "APPROVED" && status !== "REJECTED")
-      || !matchesManagerReviewOperation(data, operationPayload)) {
+      || !matchesManagerReviewOperation(data, operationPayload, hmacKey)) {
     throw new Error("관리자 감사 outbox 항목이 올바르지 않습니다.");
   }
   return createManagerReviewAuditCommand({
@@ -343,7 +348,7 @@ function auditCommandFromOutbox(item: PendingAuditOutboxItem): AdminAuditCommand
     reviewNote: operationPayload.reviewNote,
     actorAdminRole: operationPayload.actorAdminRole,
     operationId,
-  });
+  }, hmacKey);
 }
 
 function isUuid(value: string): boolean {

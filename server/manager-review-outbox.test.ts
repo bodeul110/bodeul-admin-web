@@ -6,7 +6,11 @@ import {
   managerReviewOperationHash,
   matchesManagerReviewOperation,
   processPendingAuditOutbox,
+  requireManagerReviewOutboxHmacKey,
 } from "./manager-review-outbox.ts";
+
+const HMAC_KEY = "test-manager-review-outbox-key-0001";
+const OTHER_HMAC_KEY = "test-manager-review-outbox-key-0002";
 
 test("같은 작업 UUID는 1년 tombstone 동안 동일한 심사 내용에만 재사용한다", () => {
   const expected = {
@@ -17,13 +21,23 @@ test("같은 작업 UUID는 1년 tombstone 동안 동일한 심사 내용에만 
     actorAdminRole: "OPERATIONS" as const,
   };
 
-  const payloadHash = managerReviewOperationHash(expected);
+  const payloadHash = managerReviewOperationHash(expected, HMAC_KEY);
   assert.match(payloadHash, /^[0-9a-f]{64}$/u);
-  assert.equal(matchesManagerReviewOperation({payloadHash}, expected), true);
-  assert.equal(matchesManagerReviewOperation({payloadHash}, {...expected, status: "REJECTED"}), false);
-  assert.equal(matchesManagerReviewOperation({payloadHash}, {...expected, reviewNote: "다른 심사 내용"}), false);
-  assert.equal(matchesManagerReviewOperation({payloadHash}, {...expected, actorAdminRole: "SUPER_ADMIN"}), false);
-  assert.equal(matchesManagerReviewOperation(null, expected), false);
+  assert.equal(managerReviewOperationHash(expected, HMAC_KEY), payloadHash);
+  assert.notEqual(managerReviewOperationHash(expected, OTHER_HMAC_KEY), payloadHash);
+  assert.equal(matchesManagerReviewOperation({payloadHash}, expected, HMAC_KEY), true);
+  assert.equal(matchesManagerReviewOperation({payloadHash}, {...expected, status: "REJECTED"}, HMAC_KEY), false);
+  assert.equal(matchesManagerReviewOperation({payloadHash}, {...expected, reviewNote: "다른 심사 내용"}, HMAC_KEY), false);
+  assert.equal(matchesManagerReviewOperation({payloadHash}, {...expected, actorAdminRole: "SUPER_ADMIN"}, HMAC_KEY), false);
+  assert.equal(matchesManagerReviewOperation({payloadHash}, expected, OTHER_HMAC_KEY), false);
+  assert.equal(matchesManagerReviewOperation(null, expected, HMAC_KEY), false);
+});
+
+test("심사 outbox HMAC 키가 없거나 32바이트보다 짧으면 거부한다", () => {
+  assert.throws(() => requireManagerReviewOutboxHmacKey(undefined));
+  assert.throws(() => requireManagerReviewOutboxHmacKey(" ".repeat(32)));
+  assert.throws(() => requireManagerReviewOutboxHmacKey("too-short"));
+  assert.equal(requireManagerReviewOutboxHmacKey(HMAC_KEY), HMAC_KEY);
 });
 
 test("감사 tombstone 만료는 윤년을 포함해 전달 시각의 1년 뒤로 계산한다", () => {

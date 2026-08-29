@@ -1,4 +1,7 @@
-import {createHash} from "node:crypto";
+import {createHmac, timingSafeEqual} from "node:crypto";
+
+const MANAGER_REVIEW_OUTBOX_HMAC_DOMAIN = "bodeul:manager-review-outbox:v1\0";
+const MINIMUM_HMAC_KEY_BYTES = 32;
 
 export type PendingAuditOutboxItem = {
   readonly id: string;
@@ -16,19 +19,37 @@ export type ManagerReviewOperationPayload = {
 export function matchesManagerReviewOperation(
   data: unknown,
   expected: ManagerReviewOperationPayload,
+  hmacKey: string,
 ): boolean {
   if (!isRecord(data)) return false;
-  return readText(data.payloadHash) === managerReviewOperationHash(expected);
+  const actualHash = readText(data.payloadHash);
+  if (!/^[0-9a-f]{64}$/u.test(actualHash)) return false;
+  const expectedHash = managerReviewOperationHash(expected, hmacKey);
+  return timingSafeEqual(Buffer.from(actualHash, "hex"), Buffer.from(expectedHash, "hex"));
 }
 
-export function managerReviewOperationHash(payload: ManagerReviewOperationPayload): string {
-  return createHash("sha256").update(JSON.stringify([
-    payload.managerUserId,
-    payload.status,
-    payload.reviewNote,
-    payload.actorAdminUserId,
-    payload.actorAdminRole,
-  ])).digest("hex");
+export function requireManagerReviewOutboxHmacKey(value: string | undefined): string {
+  const key = value || "";
+  if (!key.trim() || Buffer.byteLength(key, "utf8") < MINIMUM_HMAC_KEY_BYTES) {
+    throw new Error("매니저 심사 outbox HMAC 키는 32바이트 이상이어야 합니다.");
+  }
+  return key;
+}
+
+export function managerReviewOperationHash(
+  payload: ManagerReviewOperationPayload,
+  hmacKey: string,
+): string {
+  return createHmac("sha256", requireManagerReviewOutboxHmacKey(hmacKey))
+    .update(MANAGER_REVIEW_OUTBOX_HMAC_DOMAIN)
+    .update(JSON.stringify([
+      payload.managerUserId,
+      payload.status,
+      payload.reviewNote,
+      payload.actorAdminUserId,
+      payload.actorAdminRole,
+    ]))
+    .digest("hex");
 }
 
 export function managerReviewAuditTombstoneExpiresAt(deliveredAtMillis: number): number {

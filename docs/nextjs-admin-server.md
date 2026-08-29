@@ -49,6 +49,7 @@
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | 서버 | Firestore·Storage 중계 route 전용 자격 증명 |
 | `ADMIN_DATABASE_URL` | 서버 | 관리자 조회 전용 PostgreSQL 연결 |
 | `ADMIN_APP_CHECK_MODE` | 서버 | `off`, `observe`, `enforce` 전환 |
+| `MANAGER_REVIEW_OUTBOX_HMAC_KEY` | 서버 | 매니저 심사 outbox payload 식별용 32바이트 이상 난수 키. Preview와 Production은 서로 다른 값을 사용 |
 | `ADMIN_MFA_MODE` | 서버 | 관리자 다중 인증 관찰·강제 전환 |
 | `ADMIN_MFA_ENFORCE_READY` | 서버 | 전 관리자 MFA 등록·복구 확인 뒤 강제 전환을 명시 승인 |
 | `FIREBASE_APPCHECK_ALLOWED_APP_IDS` | 서버 | 현재 배포 환경이 신뢰하는 Firebase Web App ID |
@@ -178,7 +179,7 @@ Preview 배포 후:
 - 매니저 심사와 원문 미리보기의 서버 경유 코드는 구현됐지만 Preview 실제 계정·증빙으로 E2E 검증하기 전에는 Production에 승격하지 않는다.
 - Firestore·Storage Rules는 브라우저 `ADMIN` 접근을 닫는다. 이 Rules 배포와 관리자 웹 서버 환경변수 반영은 같은 출시 창에서 수행해 기능 공백을 피한다. Android의 기존 관리자 화면도 Firebase 직접 접근을 사용하므로, 해당 경로를 폐기하거나 서버 API로 이전했다는 증거 없이는 Rules를 운영에 배포하지 않는다.
 - 관리자 MFA는 `observe`로 시작하고 모든 운영 관리자 등록과 재로그인 증거를 확인한 뒤 `enforce`로 전환한다.
-- 심사 변경은 Firestore 변경과 같은 트랜잭션에 `adminAuditOutbox` PENDING 항목을 만든다. PostgreSQL 감사 성공 뒤 DELIVERED로 전환하며, 같은 작업 UUID 재시도와 심사 목록 조회 시 최대 10건을 재처리한다. 항목별 오류는 격리해 다른 감사와 심사 목록 조회를 막지 않으며, 실패 항목은 PENDING으로 남겨 다시 시도한다. 감사 함수의 8번째 `operation_id`와 partial unique index가 같은 작업의 중복 insert를 막는다. PENDING에는 재처리에 필요한 필드, 당시 관리자 역할과 결정적 `payloadHash`를 둬 역할 회수 뒤에도 원래 권한 맥락으로 감사할 수 있게 한다. 재처리할 때 원문으로 계산한 hash가 저장된 값과 다르면 해당 항목을 격리한다. DELIVERED 전환 때 사유·대상·actor·역할 등 원문 필드는 지운다. 이후 문서는 작업 UUID·payload hash·감사 ID·시각만 남기는 tombstone으로 사용하며 관리자 감사와 같은 1년 뒤 `expiresAt`을 기록한다. 따라서 같은 UUID의 다른 심사 내용은 Firestore 변경 전에 거부되고, 심사 원문은 장기간 중복 보관되지 않는다. 목록 조회 시 만료 tombstone을 최대 50건 정리하고, 장기간 관리자 접속이 없는 환경도 정리되도록 운영 전 Firestore TTL 정책을 같은 필드에 연결한다.
+- 심사 변경은 Firestore 변경과 같은 트랜잭션에 `adminAuditOutbox` PENDING 항목을 만든다. PostgreSQL 감사 성공 뒤 DELIVERED로 전환하며, 같은 작업 UUID 재시도와 심사 목록 조회 시 최대 10건을 재처리한다. 항목별 오류는 격리해 다른 감사와 심사 목록 조회를 막지 않으며, 실패 항목은 PENDING으로 남겨 다시 시도한다. 감사 함수의 8번째 `operation_id`와 partial unique index가 같은 작업의 중복 insert를 막는다. PENDING에는 재처리에 필요한 필드, 당시 관리자 역할과 서버 전용 HMAC-SHA256 키로 만든 결정적 `payloadHash`를 둬 역할 회수 뒤에도 원래 권한 맥락으로 감사할 수 있게 한다. HMAC 키가 없거나 32바이트보다 짧으면 Firestore 변경 전에 요청을 중단한다. 재처리할 때 원문으로 계산한 hash가 저장된 값과 다르면 해당 항목을 격리한다. DELIVERED 전환 때 사유·대상·actor·역할 등 원문 필드는 지운다. 이후 문서는 작업 UUID·payload hash·감사 ID·시각만 남기는 tombstone으로 사용하며 관리자 감사와 같은 1년 뒤 `expiresAt`을 기록한다. 따라서 같은 UUID의 다른 심사 내용은 Firestore 변경 전에 거부되고, 심사 원문은 장기간 중복 보관되지 않는다. 목록 조회 시 만료 tombstone을 최대 50건 정리하고, 장기간 관리자 접속이 없는 환경도 정리되도록 운영 전 Firestore TTL 정책을 같은 필드에 연결한다. HMAC 키는 비밀 저장소에서 주입하고 Preview와 Production에 서로 다른 값을 사용한다. 동일 UUID 재시도 계약을 보존하려면 키를 tombstone 보존 기간 동안 고정해야 하며, 교체가 필요하면 구 키 검증을 함께 지원하는 버전 전환을 먼저 배포한다.
 - production DB에는 Flyway V15까지 적용됐지만 관리자 DB login과 Vercel `ADMIN_DATABASE_URL`은 아직 비활성이다. 운영 role 활성화와 성공·충돌 smoke 전에는 배정 route를 공개하지 않는다.
 - token revocation 즉시 확인은 현재 범위가 아니다. 관리자 세션 만료와 위험 수준을 확인한 뒤 WIF 기반 자격 증명을 검토한다.
 - App Check 클라이언트·custom backend 검증 코드는 반영했으며, 환경별 provider와 VALID 메트릭 검증은 [Issue #16](https://github.com/bodeul110/bodeul-admin-web/issues/16)에서 계속 추적한다.

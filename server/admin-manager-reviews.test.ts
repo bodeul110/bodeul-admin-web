@@ -11,6 +11,7 @@ import {
 
 const ACTOR_ID = "5f0dcf7a-a842-4b79-985d-f94cf880db4a";
 const OPERATION_ID = "8d8fbac5-8eb1-5bb0-b584-b17919cacb7d";
+const HMAC_KEY = "test-manager-review-outbox-key-0001";
 
 test("원문 조회 사유 JSON은 한글을 변형하지 않고 읽는다", () => {
   assert.equal(
@@ -42,13 +43,14 @@ const dependencies: AdminManagerReviewDependencies = {
       availableDocumentKeys: ["idCard"],
     }];
   },
-  async saveManagerReview(managerId, status, note, actorId, actorRole, operationId) {
+  async saveManagerReview(managerId, status, note, actorId, actorRole, operationId, hmacKey) {
     assert.deepEqual(
-      [managerId, status, note, actorId, actorRole, operationId],
-      ["manager-user", "APPROVED", "", ACTOR_ID, "OPERATIONS", OPERATION_ID],
+      [managerId, status, note, actorId, actorRole, operationId, hmacKey],
+      ["manager-user", "APPROVED", "", ACTOR_ID, "OPERATIONS", OPERATION_ID, HMAC_KEY],
     );
     return {auditState: "PENDING"};
   },
+  getManagerReviewOutboxHmacKey() { return HMAC_KEY; },
   async markManagerReviewAuditDelivered(operationId, auditId) {
     assert.deepEqual([operationId, auditId], [OPERATION_ID, OPERATION_ID]);
   },
@@ -155,6 +157,30 @@ test("Firestore 심사 변경 뒤 PostgreSQL 감사 실패는 재처리 가능�
     operationId: OPERATION_ID,
     auditState: "PENDING",
   });
+});
+
+test("심사 outbox HMAC 키가 없으면 Firestore 변경 전에 실패 감사를 남기고 중단한다", async () => {
+  let saveCalled = false;
+  const outcomes: string[] = [];
+  const result = await handleSaveManagerReview("Bearer token", null, {
+    managerUserId: "manager-user",
+    status: "APPROVED",
+    reviewNote: "",
+    operationId: OPERATION_ID,
+  }, {
+    ...dependencies,
+    getManagerReviewOutboxHmacKey() { throw new Error("missing key"); },
+    async saveManagerReview() { saveCalled = true; return {auditState: "PENDING"}; },
+    async recordAdminAccessAudit(command) {
+      outcomes.push(command.outcome);
+      return OPERATION_ID;
+    },
+  });
+
+  assert.equal(result.status, 503);
+  assert.equal("error" in result.body ? result.body.error : "", "manager_review_outbox_key_unavailable");
+  assert.equal(saveCalled, false);
+  assert.deepEqual(outcomes, ["FAILED"]);
 });
 
 test("이미 전달된 outbox 작업을 재시도하면 감사를 중복 기록하지 않는다", async () => {

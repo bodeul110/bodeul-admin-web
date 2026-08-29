@@ -11,14 +11,17 @@ export type ManagerReviewAuditInput = {
   readonly operationId: string;
 };
 
-export function createManagerReviewAuditCommand(input: ManagerReviewAuditInput): AdminAuditCommand {
+export function createManagerReviewAuditCommand(
+  input: ManagerReviewAuditInput,
+  hmacKey: string,
+): AdminAuditCommand {
   const payloadHash = managerReviewOperationHash({
     managerUserId: input.managerUserId,
     status: input.status,
     reviewNote: input.reviewNote,
     actorAdminUserId: input.actorAdminUserId,
     actorAdminRole: input.actorAdminRole,
-  });
+  }, hmacKey);
   return {
     actorAdminUserId: input.actorAdminUserId,
     action: "UPDATE",
