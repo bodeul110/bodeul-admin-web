@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-type MenuKey = "dashboard" | "approval" | "hospitalGuides";
+type MenuKey = "dashboard" | "approval" | "appointmentSearch" | "hospitalGuides";
 
 type AdminShellProps = {
   adminName: string;
@@ -22,6 +22,7 @@ export function AdminShell({
   const currentMenuLabel: Record<MenuKey, string> = {
     dashboard: "대시보드",
     approval: "매니저 승인",
+    appointmentSearch: "예약 검색",
     hospitalGuides: "병원 가이드",
   };
 
@@ -50,6 +51,15 @@ export function AdminShell({
             }`}
           >
             매니저 승인
+          </button>
+          <button
+            type="button"
+            onClick={() => onMenuChange("appointmentSearch")}
+            className={`w-full rounded-md px-3 py-2 text-left transition ${
+              currentMenu === "appointmentSearch" ? "bg-blue-600" : "hover:bg-slate-800"
+            }`}
+          >
+            예약 검색
           </button>
           <button
             type="button"

@@ -53,6 +53,7 @@ Firebase ID token 검증은 privileged Firebase Admin API를 호출하지 않으
 - connection limit: 5
 - 애플리케이션 pool max: 1
 - `bodeul.app_users`, `bodeul.hospital_guides`, `bodeul.appointment_requests`: `SELECT`
+- `bodeul.search_appointment_by_public_code(uuid, text)`: `EXECUTE`. 내부에서 관리자 역할 확인, 분당 10회 제한, 해시 감사 기록과 정확 일치 조회를 함께 처리한다.
 - 세션·리포트·후속 처리·배정 감사 테이블: `SELECT`
 - `bodeul.assign_companion_session`: `EXECUTE`
 - 테이블 `INSERT`, `UPDATE`, `DELETE`: 허용하지 않음
@@ -110,6 +111,16 @@ Preview 배포 후:
 - 임시 `REQUESTED` 예약의 배정 요청은 `201`, 예약 `MATCHED`·version 1, 세션 `READY`, 감사 이력 1건 확인
 - 임시 예약·세션·감사 이력은 검증 직후 역순 삭제했고 잔여 0건을 확인했다.
 - Firebase ID token은 메모리와 표준입력에서만 처리하고 파일, PR, 명령 출력에 남기지 않았다.
+
+## 예약 공개 코드 검색
+
+- 경로: `POST /admin/appointments/public-code`, JSON 본문 `{ "publicCode": "BD-ABC123" }`
+- 코드를 URL 쿼리에 넣지 않아 호스팅 접근 로그에 평문이 남는 범위를 줄인다.
+- Firebase ID token, App Check와 PostgreSQL `ADMIN` 역할을 모두 확인한다.
+- `BD-` + 영문 대문자·숫자 6자리의 정확 검색만 허용하며 부분 검색은 제공하지 않는다.
+- 관리자별 최근 1분의 정상 검색을 10회로 제한하고 초과 시 `429 public_code_rate_limited`를 반환한다.
+- DB 감사 기록에는 공개 코드 평문 대신 SHA-256 해시와 조회 결과만 저장한다.
+- 검색 결과에 내부 예약 UUID를 함께 표시하지만 후속 변경·인가에는 계속 내부 UUID와 별도 권한 확인을 사용한다.
 
 ## Rollback
 

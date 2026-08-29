@@ -5,6 +5,10 @@ import {Pool, type PoolConfig} from "pg";
 import type {AppUserIdentity, AppUserRole} from "./admin-auth";
 import type {CompanionAssignmentCommand} from "./admin-companion-assignments";
 import type {HospitalGuideItem} from "./admin-hospital-guides";
+import type {
+  AppointmentPublicCodeLookup,
+  AppointmentPublicCodeSearchItem,
+} from "./admin-appointment-search";
 import {SUPABASE_ROOT_CA} from "./supabase-root-ca";
 
 type HospitalGuideRow = {
@@ -19,6 +23,20 @@ type HospitalGuideRow = {
 type AppUserRow = {
   readonly id: string;
   readonly role: unknown;
+};
+
+type AppointmentPublicCodeSearchRow = {
+  readonly lookup_status: "FOUND" | "NOT_FOUND" | "RATE_LIMITED";
+  readonly appointment_request_id: string | null;
+  readonly public_code: string | null;
+  readonly appointment_status: string | null;
+  readonly appointment_at: Date | string | null;
+  readonly hospital_name: string | null;
+  readonly department_name: string | null;
+  readonly patient_name: string | null;
+  readonly guardian_name: string | null;
+  readonly manager_user_id: string | null;
+  readonly manager_name: string | null;
 };
 
 const globalForPostgres = globalThis as typeof globalThis & {
@@ -58,6 +76,37 @@ export async function assignCompanionSession(command: CompanionAssignmentCommand
     throw new Error("배정 함수가 세션 ID를 반환하지 않았습니다.");
   }
   return String(sessionId);
+}
+
+export async function findAppointmentByPublicCode(
+  actorAdminUserId: string,
+  publicCode: string,
+): Promise<AppointmentPublicCodeLookup> {
+  const result = await getAdminPool().query<AppointmentPublicCodeSearchRow>(
+    "select * from bodeul.search_appointment_by_public_code($1::uuid, $2::text)",
+    [actorAdminUserId, publicCode],
+  );
+  const row = result.rows[0];
+  if (!row || row.lookup_status !== "FOUND") {
+    return {
+      status: row?.lookup_status === "RATE_LIMITED" ? "RATE_LIMITED" : "NOT_FOUND",
+      item: null,
+    };
+  }
+
+  const item: AppointmentPublicCodeSearchItem = {
+    id: requiredDatabaseText(row.appointment_request_id, "appointment_request_id"),
+    publicCode: requiredDatabaseText(row.public_code, "public_code"),
+    status: requiredDatabaseText(row.appointment_status, "appointment_status"),
+    appointmentAt: toTimestampString(row.appointment_at),
+    hospitalName: requiredDatabaseText(row.hospital_name, "hospital_name"),
+    departmentName: requiredDatabaseText(row.department_name, "department_name"),
+    patientName: row.patient_name || "",
+    guardianName: row.guardian_name || "",
+    managerUserId: row.manager_user_id || "",
+    managerName: row.manager_name || "",
+  };
+  return {status: "FOUND", item};
 }
 
 export async function listHospitalGuides(limit: number): Promise<readonly HospitalGuideItem[]> {
@@ -118,6 +167,17 @@ function isAppUserRole(value: unknown): value is AppUserRole {
   return value === "PATIENT" || value === "GUARDIAN" || value === "MANAGER" || value === "ADMIN";
 }
 
-function toTimestampString(value: Date | string): string {
+function toTimestampString(value: Date | string | null): string {
+  if (value === null) {
+    return "";
+  }
   return value instanceof Date ? value.toISOString() : String(value);
+}
+
+function requiredDatabaseText(value: string | null, fieldName: string): string {
+  const normalized = value?.trim() || "";
+  if (!normalized) {
+    throw new Error(`예약 코드 검색 응답에 ${fieldName} 값이 없습니다.`);
+  }
+  return normalized;
 }
