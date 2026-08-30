@@ -38,7 +38,7 @@ import { ManagerReviewModal } from "./components/ManagerReviewModal";
 import { useAdminIdleSession } from "./hooks/useAdminIdleSession";
 import { useManagerDocumentPreviews } from "./hooks/useManagerDocumentPreviews";
 
-type ManagerDocumentKey = "idCard" | "license" | "criminalRecord";
+type ManagerDocumentKey = "license" | "nursingLicense";
 type ChecklistStatus = "미확인" | "확인 완료";
 type ManagerStatus = "대기" | "검토중" | "승인됨" | "반려";
 type ReviewStatus = "APPROVED" | "REJECTED";
@@ -79,21 +79,19 @@ type Manager = {
 };
 
 const INITIAL_DOC_STATUS: Record<ManagerDocumentKey, ChecklistStatus> = {
-  idCard: "미확인",
   license: "미확인",
-  criminalRecord: "미확인",
+  nursingLicense: "미확인",
 };
 
 const DOCUMENTS: { key: ManagerDocumentKey; label: string; helper: string }[] = [
-  { key: "idCard", label: "신분증", helper: "신분증 원본과 이름, 생년월일을 대조합니다." },
-  { key: "license", label: "자격증", helper: "요양보호사 또는 간호 관련 자격을 확인합니다." },
-  { key: "criminalRecord", label: "범죄경력 조회", helper: "최신 발급본 기준으로 검토합니다." },
+  { key: "license", label: "요양보호사 자격증", helper: "제출한 요양보호사 자격을 확인합니다." },
+  { key: "nursingLicense", label: "간호사 자격증", helper: "제출한 간호사 자격을 확인합니다." },
 ];
+const REQUIRED_DOCUMENT_COUNT = 1;
 
 const DOCUMENT_LABEL_MAP: Record<ManagerDocumentKey, string> = {
-  idCard: "신분증",
-  license: "자격증",
-  criminalRecord: "범죄경력 조회",
+  license: "요양보호사 자격증",
+  nursingLicense: "간호사 자격증",
 };
 
 function createPreview(status: PreviewStatus, overrides: Partial<DocumentPreview> = {}): DocumentPreview {
@@ -112,9 +110,8 @@ function createPreview(status: PreviewStatus, overrides: Partial<DocumentPreview
 
 function buildPreviewState(status: PreviewStatus): Record<ManagerDocumentKey, DocumentPreview> {
   return {
-    idCard: createPreview(status),
     license: createPreview(status),
-    criminalRecord: createPreview(status),
+    nursingLicense: createPreview(status),
   };
 }
 
@@ -337,7 +334,7 @@ function ManagerApproval({
   const CHECKED_STATUS: ChecklistStatus = "확인 완료";
   const UNCHECKED_STATUS: ChecklistStatus = "미확인";
   const [selectedManagerId, setSelectedManagerId] = useState("");
-  const [activeDoc, setActiveDoc] = useState<ManagerDocumentKey>("idCard");
+  const [activeDoc, setActiveDoc] = useState<ManagerDocumentKey>("license");
   const [docStatus, setDocStatus] = useState<Record<ManagerDocumentKey, ChecklistStatus>>(INITIAL_DOC_STATUS);
   const [rejectReason, setRejectReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -348,8 +345,12 @@ function ManagerApproval({
     [managers, selectedManagerId],
   );
   const documentKeys = useMemo<ManagerDocumentKey[]>(
-    () => DOCUMENTS.map((documentInfo) => documentInfo.key),
-    [],
+    () => selectedManager
+      ? DOCUMENTS
+        .filter((documentInfo) => Boolean(selectedManager.documentFiles[documentInfo.key]?.fullPath))
+        .map((documentInfo) => documentInfo.key)
+      : [],
+    [selectedManager],
   );
   const createIdlePreviewState = useCallback(
     () => buildPreviewState("idle"),
@@ -403,16 +404,24 @@ function ManagerApproval({
     error: "확인 실패",
   };
 
-  const allDocsChecked = Object.values(docStatus).every((status) => status === CHECKED_STATUS);
+  const selectedDocuments = useMemo(
+    () => selectedManager
+      ? DOCUMENTS.filter((documentInfo) => Boolean(selectedManager.documentFiles[documentInfo.key]?.fullPath))
+      : [],
+    [selectedManager],
+  );
+  const allDocsChecked = selectedDocuments.length === REQUIRED_DOCUMENT_COUNT
+    && selectedDocuments.every((documentInfo) => docStatus[documentInfo.key] === CHECKED_STATUS);
   const hasDocumentSummary = Boolean(selectedManager?.documentSummary.trim());
-  const checkedCount = Object.values(docStatus).filter((status) => status === CHECKED_STATUS).length;
+  const checkedCount = selectedDocuments
+    .filter((documentInfo) => docStatus[documentInfo.key] === CHECKED_STATUS).length;
   const totalManagers = managers.length;
   const summaryReadyCount = useMemo(
     () => managers.filter((manager) => Boolean(manager.documentSummary.trim())).length,
     [managers],
   );
   const fullyUploadedCount = useMemo(
-    () => managers.filter((manager) => getUploadedDocumentCount(manager) === DOCUMENTS.length).length,
+    () => managers.filter((manager) => getUploadedDocumentCount(manager) === REQUIRED_DOCUMENT_COUNT).length,
     [managers],
   );
   const reviewNoteCount = useMemo(
@@ -420,7 +429,7 @@ function ManagerApproval({
     [managers],
   );
   const selectedManagerUploadedCount = selectedManager ? getUploadedDocumentCount(selectedManager) : 0;
-  const selectedManagerMissingCount = DOCUMENTS.length - selectedManagerUploadedCount;
+  const selectedManagerMissingCount = Math.max(0, REQUIRED_DOCUMENT_COUNT - selectedManagerUploadedCount);
 
   function openManagerReview(manager: Manager) {
     const accessReason = window.prompt("민감 서류 원문 조회 사유를 10자 이상 입력해 주세요.")?.trim() || "";
@@ -430,7 +439,10 @@ function ManagerApproval({
     }
     setDocumentAccessReason(accessReason);
     setSelectedManagerId(manager.id);
-    setActiveDoc("idCard");
+    setActiveDoc(
+      DOCUMENTS.find((documentInfo) => Boolean(manager.documentFiles[documentInfo.key]?.fullPath))?.key
+        || "license",
+    );
     setDocStatus(INITIAL_DOC_STATUS);
     setRejectReason(manager.reviewNote || "");
     setIsSubmitting(false);
@@ -438,7 +450,7 @@ function ManagerApproval({
 
   function closeModal() {
     setSelectedManagerId("");
-    setActiveDoc("idCard");
+    setActiveDoc("license");
     setDocStatus(INITIAL_DOC_STATUS);
     setRejectReason("");
     setIsSubmitting(false);
@@ -466,11 +478,13 @@ function ManagerApproval({
       window.alert("확인할 체크리스트를 모두 완료해 주세요.");
       return;
     }
-    const documentEvidenceTokens = DOCUMENTS.map(
+    const documentEvidenceTokens = selectedDocuments.map(
       (documentInfo) => documentPreviews[documentInfo.key].evidenceToken,
     );
-    if (nextStatus === "APPROVED" && documentEvidenceTokens.some((token) => !token)) {
-      window.alert("승인 전에 세 문서의 보호 미리보기를 모두 다시 확인해 주세요.");
+    if (nextStatus === "APPROVED"
+        && (documentEvidenceTokens.length !== REQUIRED_DOCUMENT_COUNT
+          || documentEvidenceTokens.some((token) => !token))) {
+      window.alert("승인 전에 현재 자격 증빙의 보호 미리보기를 다시 확인해 주세요.");
       return;
     }
     if (nextStatus === "REJECTED" && !reviewNote) {
@@ -533,9 +547,9 @@ function ManagerApproval({
           <p className="mt-1 text-xs text-gray-500">서류 요약까지 입력을 마친 계정</p>
         </div>
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">원본 3종 완료</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">자격 증빙 완료</p>
           <p className="mt-2 text-2xl font-semibold text-blue-700">{fullyUploadedCount}</p>
-          <p className="mt-1 text-xs text-gray-500">신분증, 자격증, 범죄경력 조회서 업로드 완료</p>
+          <p className="mt-1 text-xs text-gray-500">현재 자격에 맞는 증빙 1건 업로드 완료</p>
         </div>
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">검토 메모 있음</p>
@@ -547,7 +561,7 @@ function ManagerApproval({
       <ManagerApprovalList
         managers={managers}
         statusBadgeClass={statusBadgeClass}
-        totalDocumentCount={DOCUMENTS.length}
+        totalDocumentCount={REQUIRED_DOCUMENT_COUNT}
         onOpenManagerReview={openManagerReview}
         getUploadedDocumentCount={getUploadedDocumentCount}
         getUploadedDocumentLabels={getUploadedDocumentLabels}
@@ -568,11 +582,11 @@ function ManagerApproval({
           allDocsChecked={allDocsChecked}
           hasDocumentSummary={hasDocumentSummary}
           checkedCount={checkedCount}
-          totalDocumentCount={DOCUMENTS.length}
+          totalDocumentCount={REQUIRED_DOCUMENT_COUNT}
           selectedManagerUploadedCount={selectedManagerUploadedCount}
           selectedManagerMissingCount={selectedManagerMissingCount}
           documentPreviews={documentPreviews}
-          documents={DOCUMENTS}
+          documents={selectedDocuments}
           statusBadgeClass={statusBadgeClass}
           previewBadgeClass={previewBadgeClass}
           previewBadgeLabel={previewBadgeLabel}

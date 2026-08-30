@@ -1,9 +1,8 @@
 import type {ManagerDocumentKey} from "./admin-manager-reviews.ts";
 
 const DOCUMENT_STORAGE_KEYS: Record<ManagerDocumentKey, readonly string[]> = {
-  idCard: ["idCard"],
-  license: ["license", "healthCertificate"],
-  criminalRecord: ["criminalRecord"],
+  license: ["license"],
+  nursingLicense: ["nursingLicense"],
 };
 
 export function documentStorageKeys(documentKey: ManagerDocumentKey): readonly string[] {

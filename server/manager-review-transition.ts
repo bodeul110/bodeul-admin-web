@@ -36,11 +36,22 @@ export function validateManagerReviewTransition(input: {
     return [];
   }
 
+  const currentDocuments = (Object.entries(input.currentStoragePathDigests) as [ManagerDocumentKey, string][])
+    .filter(([, digest]) => Boolean(digest));
+  if (currentDocuments.length !== 1 || input.documentEvidence.length !== 1) {
+    throw transitionError(
+      "manager_document_evidence_stale",
+      "현재 자격 증빙 하나와 문서 확인 증거 하나가 일치해야 합니다.",
+    );
+  }
+  const [currentDocumentKey, currentStoragePathDigest] = currentDocuments[0]!;
+
   const snapshots = input.documentEvidence.map((evidence) => {
     if (evidence.actorAdminUserId !== input.actorAdminUserId
         || evidence.managerUserId !== input.managerUserId
         || evidence.submissionRevision !== input.expectedSubmissionRevision
-        || input.currentStoragePathDigests[evidence.documentKey] !== evidence.storagePathDigest) {
+        || evidence.documentKey !== currentDocumentKey
+        || evidence.storagePathDigest !== currentStoragePathDigest) {
       throw transitionError("manager_document_evidence_stale", "현재 제출 문서가 확인한 문서와 다릅니다.");
     }
     return {

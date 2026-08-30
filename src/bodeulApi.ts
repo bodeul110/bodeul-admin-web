@@ -79,7 +79,7 @@ export type AdminManagerReviewItem = {
   readonly status: "PENDING" | "PENDING_REVIEW" | "APPROVED" | "REJECTED";
   readonly documentSummary: string;
   readonly reviewNote: string;
-  readonly availableDocumentKeys: readonly ("idCard" | "license" | "criminalRecord")[];
+  readonly availableDocumentKeys: readonly ("license" | "nursingLicense")[];
   readonly submissionRevision: string;
 };
 
@@ -326,7 +326,7 @@ export async function saveAdminManagerReview(
 export async function fetchAdminManagerDocument(
   user: FirebaseUser,
   managerUserId: string,
-  documentKey: "idCard" | "license" | "criminalRecord",
+  documentKey: "license" | "nursingLicense",
   reason: string,
 ): Promise<AdminManagerDocumentPayload> {
   const [token, appCheckToken] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]);
@@ -492,10 +492,11 @@ function toAdminManagerReviewItem(value: unknown): AdminManagerReviewItem {
     throw new BodeulApiError("invalid_manager_reviews_payload", "매니저 심사 상태가 올바르지 않습니다.");
   }
   const availableDocumentKeys = value.availableDocumentKeys.filter(
-    (key): key is "idCard" | "license" | "criminalRecord" =>
-      key === "idCard" || key === "license" || key === "criminalRecord",
+    (key): key is "license" | "nursingLicense" =>
+      key === "license" || key === "nursingLicense",
   );
-  if (availableDocumentKeys.length !== value.availableDocumentKeys.length) {
+  if (availableDocumentKeys.length !== value.availableDocumentKeys.length
+      || availableDocumentKeys.length > 1) {
     throw new BodeulApiError("invalid_manager_reviews_payload", "매니저 문서 목록이 올바르지 않습니다.");
   }
   return {

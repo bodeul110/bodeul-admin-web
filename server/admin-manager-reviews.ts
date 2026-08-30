@@ -12,7 +12,7 @@ import {
   type ManagerDocumentEvidence,
 } from "./manager-document-evidence.ts";
 
-export type ManagerDocumentKey = "idCard" | "license" | "criminalRecord";
+export type ManagerDocumentKey = "license" | "nursingLicense";
 
 export type AdminManagerReviewItem = {
   readonly id: string;
@@ -273,7 +273,7 @@ function mapManagerReviewSaveFailure(error: unknown): AdminManagerMutationResult
       "증빙 원본 파기 절차가 진행 중입니다. 완료 후 다시 심사해 주세요.",
     );
   }
-  if (code === "P0005") return failure(409, "manager_document_evidence_stale", "확인한 문서가 현재 제출 문서와 다릅니다. 세 문서를 다시 확인해 주세요.");
+  if (code === "P0005") return failure(409, "manager_document_evidence_stale", "확인한 자격 증빙이 현재 제출 문서와 다릅니다. 다시 확인해 주세요.");
   if (code === "manager_review_not_pending") {
     return failure(409, "manager_review_not_pending", "이미 처리됐거나 심사 대기 상태가 아닌 제출입니다.");
   }
@@ -286,16 +286,16 @@ function mapManagerReviewSaveFailure(error: unknown): AdminManagerMutationResult
 function mapManagerDocumentEvidenceFailure(error: unknown): AdminManagerMutationResult {
   const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
   if (code === "manager_document_evidence_expired") {
-    return failure(409, "manager_document_evidence_expired", "문서 확인 시간이 만료되었습니다. 세 문서를 다시 확인해 주세요.");
+    return failure(409, "manager_document_evidence_expired", "문서 확인 시간이 만료되었습니다. 현재 자격 증빙을 다시 확인해 주세요.");
   }
   if (code === "manager_document_evidence_incomplete") {
-    return failure(409, "manager_document_evidence_incomplete", "승인 전에 세 문서를 모두 확인해 주세요.");
+    return failure(409, "manager_document_evidence_incomplete", "승인 전에 현재 자격 증빙을 확인해 주세요.");
   }
   if (code === "P0005") {
-    return failure(409, "manager_document_evidence_stale", "확인한 뒤 문서가 변경되었습니다. 세 문서를 다시 확인해 주세요.");
+    return failure(409, "manager_document_evidence_stale", "확인한 뒤 자격 증빙이 변경되었습니다. 다시 확인해 주세요.");
   }
   if (code === "invalid_manager_document_evidence" || code === "manager_document_evidence_scope_mismatch") {
-    return failure(409, "manager_document_evidence_invalid", "문서 확인 증거가 올바르지 않습니다. 세 문서를 다시 확인해 주세요.");
+    return failure(409, "manager_document_evidence_invalid", "문서 확인 증거가 올바르지 않습니다. 현재 자격 증빙을 다시 확인해 주세요.");
   }
   return failure(503, "manager_document_evidence_verification_failed", "현재 제출 문서를 다시 확인하지 못했습니다.");
 }
@@ -478,7 +478,7 @@ async function recordFailedAudit(
 }
 
 function readDocumentKey(value: unknown): ManagerDocumentKey | null {
-  return value === "idCard" || value === "license" || value === "criminalRecord" ? value : null;
+  return value === "license" || value === "nursingLicense" ? value : null;
 }
 
 function readIdentifier(value: unknown): string {
@@ -494,7 +494,7 @@ function readUuid(value: unknown): string {
 }
 
 function readEvidenceTokens(value: unknown): readonly string[] {
-  if (!Array.isArray(value) || value.length !== 3) return [];
+  if (!Array.isArray(value) || value.length !== 1) return [];
   const tokens = value.map((item) => typeof item === "string" ? item.trim() : "");
   return tokens.every((token) => token.length > 0 && token.length <= 4096) ? tokens : [];
 }

@@ -11,10 +11,8 @@ import type {
   ManagerDocumentKey,
 } from "./admin-manager-reviews";
 import type {AdminDetailRole} from "./admin-auth";
-import {
-  documentStorageKeys,
-  isAllowedManagerDocumentStoragePath,
-} from "./manager-document-storage-path";
+import {resolveCanonicalManagerDocumentReference} from "./manager-document-contract";
+import {isAllowedManagerDocumentStoragePath} from "./manager-document-storage-path";
 import {normalizeInlineManagerDocumentContentType} from "./manager-document-response";
 import {
   createManagerDocumentEvidenceToken,
@@ -39,8 +37,6 @@ import {
   type PendingAuditOutboxItem,
 } from "./manager-review-outbox";
 
-const MANAGER_DOCUMENT_KEYS: readonly ManagerDocumentKey[] = ["idCard", "license", "criminalRecord"];
-
 export async function listManagerReviews(): Promise<readonly AdminManagerReviewItem[]> {
   const snapshot = await getFirestore(getFirebaseAdminApp())
     .collection("users")
@@ -64,13 +60,8 @@ export async function saveManagerReview(
   documentEvidenceDigest: string,
   submissionRevision: string,
 ): Promise<{readonly auditState: "PENDING" | "DELIVERED"}> {
-  const evidenceKeys = new Set(documentEvidence.map((item) => item.documentKey));
   if (managerDocumentEvidenceSetDigest(documentEvidence) !== documentEvidenceDigest
-      || (status === "APPROVED" && documentEvidence.length !== MANAGER_DOCUMENT_KEYS.length)
-      || (status === "APPROVED" && (
-        evidenceKeys.size !== MANAGER_DOCUMENT_KEYS.length
-        || MANAGER_DOCUMENT_KEYS.some((key) => !evidenceKeys.has(key))
-      ))
+      || (status === "APPROVED" && documentEvidence.length !== 1)
       || (status === "REJECTED" && documentEvidence.length !== 0)) {
     throw codedError("P0005", "문서 확인 증거가 심사 요청과 일치하지 않습니다.");
   }
@@ -109,10 +100,10 @@ export async function saveManagerReview(
       throw codedError("P0001", "제출 요약이 없습니다.");
     }
     const currentSubmissionRevision = canonicalManagerDocumentRevision(data.managerDocumentUpdatedAt);
-    const currentStoragePathDigests = Object.fromEntries(MANAGER_DOCUMENT_KEYS.map((documentKey) => {
-      const currentPath = resolveDocumentPath(data, managerUserId, documentKey);
-      return [documentKey, currentPath ? managerDocumentStoragePathDigest(currentPath, hmacKey) : ""];
-    }));
+    const canonicalDocument = resolveCanonicalManagerDocumentReference(data, managerUserId);
+    const currentStoragePathDigests = canonicalDocument
+      ? {[canonicalDocument.documentKey]: managerDocumentStoragePathDigest(canonicalDocument.storagePath, hmacKey)}
+      : {};
     const approvalEvidenceSnapshot = validateManagerReviewTransition({
       currentStatus: data.managerDocumentStatus,
       currentSubmissionRevision,
@@ -255,10 +246,11 @@ export async function loadManagerDocument(
   if (!submissionRevision) {
     throw codedError("P0005", "제출 revision을 확인하지 못했습니다.");
   }
-  const explicitPath = resolveDocumentPath(data, managerUserId, documentKey);
-  if (!explicitPath) {
+  const canonicalDocument = resolveCanonicalManagerDocumentReference(data, managerUserId);
+  if (!canonicalDocument || canonicalDocument.documentKey !== documentKey) {
     return null;
   }
+  const explicitPath = canonicalDocument.storagePath;
   const bucket = getStorage(getFirebaseAdminApp()).bucket();
   const file = bucket.file(explicitPath);
 
@@ -321,13 +313,14 @@ export async function verifyManagerDocumentEvidenceTokens(
       || evidence.some((item) => item.submissionRevision !== currentSubmissionRevision)) {
     throw codedError("P0005", "확인한 뒤 제출 상태 또는 revision이 변경되었습니다.");
   }
-  await Promise.all(evidence.map(async (item) => {
-    const storagePath = resolveDocumentPath(data, managerUserId, item.documentKey);
-    if (!storagePath || managerDocumentStoragePathDigest(storagePath, hmacKey) !== item.storagePathDigest) {
-      throw codedError("P0005", "확인한 뒤 제출 문서 포인터가 변경되었습니다.");
-    }
-    await assertCurrentStorageEvidence(item, storagePath);
-  }));
+  const canonicalDocument = resolveCanonicalManagerDocumentReference(data, managerUserId);
+  const item = evidence[0];
+  if (!canonicalDocument || !item
+      || canonicalDocument.documentKey !== item.documentKey
+      || managerDocumentStoragePathDigest(canonicalDocument.storagePath, hmacKey) !== item.storagePathDigest) {
+    throw codedError("P0005", "확인한 뒤 제출 문서 포인터가 변경되었습니다.");
+  }
+  await assertCurrentStorageEvidence(item, canonicalDocument.storagePath);
   return evidence;
 }
 
@@ -371,8 +364,7 @@ async function assertCurrentStorageEvidence(
 }
 
 function toManagerReviewItem(id: string, data: DocumentData): AdminManagerReviewItem {
-  const documentPaths = MANAGER_DOCUMENT_KEYS
-    .filter((key) => Boolean(resolveDocumentPath(data, id, key)));
+  const canonicalDocument = resolveCanonicalManagerDocumentReference(data, id);
   const status = data.managerDocumentStatus === "PENDING_REVIEW"
     || data.managerDocumentStatus === "APPROVED"
     || data.managerDocumentStatus === "REJECTED"
@@ -387,46 +379,9 @@ function toManagerReviewItem(id: string, data: DocumentData): AdminManagerReview
     status,
     documentSummary: readText(data.managerDocumentSummary),
     reviewNote: readText(data.managerDocumentReviewNote),
-    availableDocumentKeys: documentPaths,
+    availableDocumentKeys: canonicalDocument ? [canonicalDocument.documentKey] : [],
     submissionRevision: canonicalManagerDocumentRevision(data.managerDocumentUpdatedAt),
   };
-}
-
-function resolveDocumentPath(
-  data: DocumentData,
-  managerUserId: string,
-  documentKey: ManagerDocumentKey,
-): string {
-  const maps = [data.managerDocumentFiles, data.managerDocumentFilePaths];
-  for (const map of maps) {
-    if (!map || typeof map !== "object" || Array.isArray(map)) continue;
-    for (const storageKey of documentStorageKeys(documentKey)) {
-      const path = pathFromValue((map as Record<string, unknown>)[storageKey]);
-      if (isAllowedManagerDocumentStoragePath(managerUserId, documentKey, path)) return path;
-    }
-  }
-  const legacyFields: Record<ManagerDocumentKey, readonly unknown[]> = {
-    idCard: [data.managerIdCardFilePath, data.idCardFilePath, data.managerIdCardStoragePath],
-    license: [
-      data.managerLicenseFilePath, data.licenseFilePath, data.managerLicenseStoragePath,
-      data.managerHealthCertificateFilePath, data.healthCertificateFilePath,
-      data.managerHealthCertificateStoragePath,
-    ],
-    criminalRecord: [
-      data.managerCriminalRecordFilePath, data.criminalRecordFilePath,
-      data.managerCriminalRecordStoragePath,
-    ],
-  };
-  return legacyFields[documentKey]
-    .map(pathFromValue)
-    .find((path) => isAllowedManagerDocumentStoragePath(managerUserId, documentKey, path)) || "";
-}
-
-function pathFromValue(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
-  const record = value as Record<string, unknown>;
-  return readText(record.fullPath || record.path || record.storagePath);
 }
 
 function maskName(value: string): string {

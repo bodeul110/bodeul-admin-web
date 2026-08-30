@@ -17,9 +17,9 @@ import {
 const ACTOR_ID = "5f0dcf7a-a842-4b79-985d-f94cf880db4a";
 const OPERATION_ID = "8d8fbac5-8eb1-5bb0-b584-b17919cacb7d";
 const HMAC_KEY = "test-manager-review-outbox-key-0001";
-const DOCUMENT_EVIDENCE_TOKENS = ["id-evidence", "license-evidence", "criminal-evidence"];
+const DOCUMENT_EVIDENCE_TOKENS = ["license-evidence"];
 const SUBMISSION_REVISION = "ts:1787961600:000000000";
-const DOCUMENT_EVIDENCE: readonly ManagerDocumentEvidence[] = ["idCard", "license", "criminalRecord"].map(
+const DOCUMENT_EVIDENCE: readonly ManagerDocumentEvidence[] = ["license"].map(
   (documentKey) => ({
     version: 1,
     actorAdminUserId: ACTOR_ID,
@@ -30,8 +30,7 @@ const DOCUMENT_EVIDENCE: readonly ManagerDocumentEvidence[] = ["idCard", "licens
       HMAC_KEY,
     ),
     generation: "123456789",
-    digest: documentKey === "idCard" ? "1".repeat(64)
-      : documentKey === "license" ? "2".repeat(64) : "3".repeat(64),
+    digest: "2".repeat(64),
     contentType: "application/pdf",
     submissionRevision: SUBMISSION_REVISION,
     issuedAt: 1,
@@ -78,7 +77,7 @@ const dependencies: AdminManagerReviewDependencies = {
       status: "PENDING_REVIEW",
       documentSummary: "서류 제출 완료",
       reviewNote: "",
-      availableDocumentKeys: ["idCard"],
+      availableDocumentKeys: ["license"],
       submissionRevision: SUBMISSION_REVISION,
     }];
   },
@@ -107,7 +106,7 @@ const dependencies: AdminManagerReviewDependencies = {
   },
   async reconcilePendingManagerReviewAudits() { return 0; },
   async loadManagerDocument(managerId, documentKey, actorId, hmacKey) {
-    assert.deepEqual([managerId, documentKey, actorId, hmacKey], ["manager-user", "idCard", ACTOR_ID, HMAC_KEY]);
+    assert.deepEqual([managerId, documentKey, actorId, hmacKey], ["manager-user", "license", ACTOR_ID, HMAC_KEY]);
     return {
       bytes: new Uint8Array([1, 2, 3]),
       contentType: "image/webp",
@@ -162,7 +161,7 @@ test("DEVELOPER는 목록·심사·원문 조회를 모두 거부한다", async 
     managerUserId: "manager-user", status: "APPROVED", reviewNote: "", operationId: OPERATION_ID,
   }, developerDependencies);
   const document = await handleLoadManagerDocument(
-    "Bearer token", null, "manager-user", "idCard", "매니저 자격 심사를 위한 원본 확인", developerDependencies,
+    "Bearer token", null, "manager-user", "license", "매니저 자격 심사를 위한 원본 확인", developerDependencies,
   );
   assert.equal(list.status, 403);
   assert.equal(review.status, 403);
@@ -173,7 +172,7 @@ test("DEVELOPER는 목록·심사·원문 조회를 모두 거부한다", async 
 test("비인증 원문 요청은 actor가 없으므로 감사 함수를 호출하지 않는다", async () => {
   let auditCalled = false;
   const result = await handleLoadManagerDocument(
-    null, null, "manager-user", "idCard", "매니저 자격 심사를 위한 원본 확인", {
+    null, null, "manager-user", "license", "매니저 자격 심사를 위한 원본 확인", {
       ...dependencies,
       async recordAdminAccessAudit() { auditCalled = true; return OPERATION_ID; },
     },
@@ -297,14 +296,14 @@ test("보호 미리보기는 10자 이상 사유를 요구하고 감사한다", 
   let documentCalled = false;
   const auditCommands: Parameters<AdminManagerReviewDependencies["recordAdminAccessAudit"]>[0][] = [];
   const invalid = await handleLoadManagerDocument(
-    "Bearer token", null, "manager-user", "idCard", "짧음", {
+    "Bearer token", null, "manager-user", "license", "짧음", {
       ...dependencies,
       async loadManagerDocument() { documentCalled = true; return null; },
       async recordAdminAccessAudit(command) { auditCommands.push(command); return OPERATION_ID; },
     },
   );
   const valid = await handleLoadManagerDocument(
-    "Bearer token", null, "manager-user", "idCard", "매니저 자격 심사를 위한 원본 확인", dependencies,
+    "Bearer token", null, "manager-user", "license", "매니저 자격 심사를 위한 원본 확인", dependencies,
   );
   assert.equal(invalid.status, 400);
   assert.equal(documentCalled, false);
@@ -314,7 +313,42 @@ test("보호 미리보기는 10자 이상 사유를 요구하고 감사한다", 
   assert.deepEqual(auditCommands[0]?.metadata, {failureCode: "invalid_manager_document_request"});
 });
 
-test("세 문서 확인 증거가 없거나 만료되면 승인 전에 거부한다", async () => {
+test("보존 전용 문서 키는 관리자 원문 조회 경로에서 거부한다", async () => {
+  let documentCalled = false;
+  const result = await handleLoadManagerDocument(
+    "Bearer token", null, "manager-user", "idCard", "매니저 자격 심사를 위한 원본 확인", {
+      ...dependencies,
+      async loadManagerDocument() { documentCalled = true; return null; },
+    },
+  );
+
+  assert.equal(result.status, 400);
+  assert.equal(documentCalled, false);
+});
+
+test("간호사 자격 증빙은 현재 canonical 원문 조회 키로 허용한다", async () => {
+  const result = await handleLoadManagerDocument(
+    "Bearer token", null, "manager-user", "nursingLicense", "매니저 자격 심사를 위한 원본 확인", {
+      ...dependencies,
+      async loadManagerDocument(managerId, documentKey, actorId, hmacKey) {
+        assert.deepEqual(
+          [managerId, documentKey, actorId, hmacKey],
+          ["manager-user", "nursingLicense", ACTOR_ID, HMAC_KEY],
+        );
+        return {
+          bytes: new Uint8Array([1, 2, 3]),
+          contentType: "image/webp",
+          updatedAt: "2026-08-29T00:00:00.000Z",
+          evidenceToken: "nursing-license-evidence",
+        };
+      },
+    },
+  );
+
+  assert.equal(result.status, 200);
+});
+
+test("현재 자격 증빙 확인 증거가 없거나 만료되면 승인 전에 거부한다", async () => {
   let saveCalled = false;
   const missing = await handleSaveManagerReview("Bearer token", null, {
     ...approvedRequest(),
@@ -365,10 +399,10 @@ test("원문 조회 실패와 잘못된 사유는 각각 FAILED와 DENIED로 감
     },
   };
   const invalid = await handleLoadManagerDocument(
-    "Bearer token", null, "manager-user", "idCard", "짧음", auditedDependencies,
+    "Bearer token", null, "manager-user", "license", "짧음", auditedDependencies,
   );
   const failed = await handleLoadManagerDocument(
-    "Bearer token", null, "manager-user", "idCard", "매니저 자격 심사를 위한 원본 확인", auditedDependencies,
+    "Bearer token", null, "manager-user", "license", "매니저 자격 심사를 위한 원본 확인", auditedDependencies,
   );
   assert.equal(invalid.status, 400);
   assert.equal(failed.status, 503);
@@ -378,7 +412,7 @@ test("원문 조회 실패와 잘못된 사유는 각각 FAILED와 DENIED로 감
 test("비허용 원문 MIME은 성공 감사 전에 FAILED로 기록하고 415를 반환한다", async () => {
   const auditCommands: Parameters<AdminManagerReviewDependencies["recordAdminAccessAudit"]>[0][] = [];
   const result = await handleLoadManagerDocument(
-    "Bearer token", null, "manager-user", "idCard", "매니저 자격 심사를 위한 원본 확인", {
+    "Bearer token", null, "manager-user", "license", "매니저 자격 심사를 위한 원본 확인", {
       ...dependencies,
       async loadManagerDocument() {
         throw Object.assign(new Error("unsafe content type"), {code: "P0004"});
@@ -399,7 +433,7 @@ test("비허용 원문 MIME은 성공 감사 전에 FAILED로 기록하고 415�
 
 test("원문 ALLOWED 감사 기록이 실패하면 bytes를 반환하지 않는다", async () => {
   const result = await handleLoadManagerDocument(
-    "Bearer token", null, "manager-user", "idCard", "매니저 자격 심사를 위한 원본 확인", {
+    "Bearer token", null, "manager-user", "license", "매니저 자격 심사를 위한 원본 확인", {
       ...dependencies,
       async recordAdminAccessAudit() { throw new Error("postgres down"); },
     },

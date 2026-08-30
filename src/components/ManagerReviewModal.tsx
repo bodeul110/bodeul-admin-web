@@ -1,4 +1,4 @@
-type ManagerDocumentKey = "idCard" | "license" | "criminalRecord";
+type ManagerDocumentKey = "license" | "nursingLicense";
 type ReviewStatus = "APPROVED" | "REJECTED";
 type DocumentPreview = {
   status: string;
@@ -262,7 +262,7 @@ export function ManagerReviewModal({
               <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">검토 진행</p>
               <p className="mt-2 text-lg font-semibold text-gray-900">{checkedCount}/{totalDocumentCount}</p>
               <p className="mt-1 text-xs text-gray-500">
-                {allDocsChecked ? "세 항목 모두 확인 완료" : "확인한 보호 미리보기만 체크해 주세요."}
+                {allDocsChecked ? "현재 자격 증빙 확인 완료" : "확인한 보호 미리보기만 체크해 주세요."}
               </p>
             </div>
 
@@ -294,7 +294,7 @@ export function ManagerReviewModal({
                 value={rejectReason}
                 onChange={(event) => setRejectReason(event.target.value)}
                 rows={4}
-                placeholder="예: 범죄경력 조회 파일이 누락되어 보완이 필요합니다."
+                placeholder="예: 자격 증빙 내용이 선명하지 않아 다시 제출해 주세요."
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
@@ -325,7 +325,7 @@ export function ManagerReviewModal({
             </div>
 
             <p className="text-[11px] leading-5 text-gray-500">
-              승인 전에는 세 개 문서의 보호 미리보기와 제출 요약을 함께 확인하세요. 요약이 없으면 심사 결과를 저장하지 않습니다.
+              승인 전에는 현재 자격 증빙의 보호 미리보기와 제출 요약을 함께 확인하세요. 요약이 없으면 심사 결과를 저장하지 않습니다.
             </p>
           </section>
         </div>

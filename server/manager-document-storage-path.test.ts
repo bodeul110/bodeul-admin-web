@@ -11,9 +11,14 @@ test("매니저 증빙 경로는 대상 UID와 허용 문서 종류의 단일 �
   ), true);
   assert.equal(isAllowedManagerDocumentStoragePath(
     "manager-1",
+    "nursingLicense",
+    "manager-documents/manager-1/nursingLicense/certificate.pdf",
+  ), true);
+  assert.equal(isAllowedManagerDocumentStoragePath(
+    "manager-1",
     "license",
     "manager-documents/manager-1/healthCertificate/certificate.pdf",
-  ), true);
+  ), false);
   assert.equal(isAllowedManagerDocumentStoragePath(
     "manager-1",
     "license",

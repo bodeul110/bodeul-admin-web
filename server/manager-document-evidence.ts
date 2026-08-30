@@ -81,15 +81,11 @@ export function verifyManagerDocumentEvidenceSet(
   expected: {readonly actorAdminUserId: string; readonly managerUserId: string},
   now = Date.now(),
 ): readonly ManagerDocumentEvidence[] {
-  if (tokens.length !== 3) {
-    throw evidenceError("manager_document_evidence_incomplete", "세 종류의 문서 확인 증거가 모두 필요합니다.");
+  if (tokens.length !== 1) {
+    throw evidenceError("manager_document_evidence_incomplete", "현재 자격 증빙의 문서 확인 증거 하나가 필요합니다.");
   }
   const evidence = tokens.map((token) => verifyManagerDocumentEvidenceToken(token, hmacKey, expected, now));
-  const byKey = new Map(evidence.map((item) => [item.documentKey, item]));
-  if (byKey.size !== 3 || !byKey.has("idCard") || !byKey.has("license") || !byKey.has("criminalRecord")) {
-    throw evidenceError("manager_document_evidence_incomplete", "문서 확인 증거의 종류가 중복되거나 누락되었습니다.");
-  }
-  return [byKey.get("idCard")!, byKey.get("license")!, byKey.get("criminalRecord")!];
+  return evidence;
 }
 
 export function managerDocumentEvidenceSetDigest(
@@ -146,7 +142,7 @@ function assertEvidenceShape(value: unknown): asserts value is ManagerDocumentEv
 }
 
 function isDocumentKey(value: unknown): value is ManagerDocumentKey {
-  return value === "idCard" || value === "license" || value === "criminalRecord";
+  return value === "license" || value === "nursingLicense";
 }
 
 function isContentType(value: unknown): value is ManagerDocumentEvidence["contentType"] {
