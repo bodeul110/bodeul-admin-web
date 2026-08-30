@@ -27,6 +27,7 @@ import {
   createManagerDocumentPreview,
   detectManagerDocumentContentType,
 } from "./manager-document-preview";
+import {managerDocumentDeletionClaimBlocksAdminWrite} from "./manager-document-deletion-claim";
 import type {AdminAuditCommand} from "./postgres";
 import {createManagerReviewAuditCommand} from "./manager-review-audit";
 import {validateManagerReviewTransition} from "./manager-review-transition";
@@ -100,6 +101,10 @@ export async function saveManagerReview(
       throw codedError("P0002", "매니저 계정을 찾지 못했습니다.");
     }
     const data = snapshot.data() || {};
+    // 같은 문서를 읽고 쓰는 transaction 안에서 검사해 동시 claim 생성도 재시도 후 차단한다.
+    if (managerDocumentDeletionClaimBlocksAdminWrite(data)) {
+      throw codedError("P0006", "매니저 증빙 원본 파기 절차가 진행 중입니다.");
+    }
     if (!readText(data.managerDocumentSummary)) {
       throw codedError("P0001", "제출 요약이 없습니다.");
     }

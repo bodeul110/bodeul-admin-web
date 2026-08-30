@@ -266,6 +266,13 @@ function mapManagerReviewSaveFailure(error: unknown): AdminManagerMutationResult
   if (code === "P0002") return failure(404, "manager_not_found", "매니저 계정을 찾지 못했습니다.");
   if (code === "P0001") return failure(409, "manager_review_not_ready", "제출 요약과 서류 상태를 확인해 주세요.");
   if (code === "P0003") return failure(409, "manager_review_operation_conflict", "같은 작업 번호의 심사 내용이 다릅니다.");
+  if (code === "P0006") {
+    return failure(
+      409,
+      "manager_document_deletion_in_progress",
+      "증빙 원본 파기 절차가 진행 중입니다. 완료 후 다시 심사해 주세요.",
+    );
+  }
   if (code === "P0005") return failure(409, "manager_document_evidence_stale", "확인한 문서가 현재 제출 문서와 다릅니다. 세 문서를 다시 확인해 주세요.");
   if (code === "manager_review_not_pending") {
     return failure(409, "manager_review_not_pending", "이미 처리됐거나 심사 대기 상태가 아닌 제출입니다.");

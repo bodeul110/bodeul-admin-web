@@ -272,6 +272,27 @@ test("심사 거부 감사가 실패하면 원래 409 대신 fail-closed 503을 
   assert.equal("error" in result.body ? result.body.error : "", "admin_audit_failed");
 });
 
+test("증빙 삭제 claim과 심사 변경이 충돌하면 409로 중단하고 거부 감사를 남긴다", async () => {
+  const outcomes: string[] = [];
+  const result = await handleSaveManagerReview("Bearer token", null, approvedRequest(), {
+    ...dependencies,
+    async saveManagerReview() {
+      throw Object.assign(new Error("deletion claimed"), {code: "P0006"});
+    },
+    async recordAdminAccessAudit(command) {
+      outcomes.push(command.outcome);
+      return OPERATION_ID;
+    },
+  });
+
+  assert.equal(result.status, 409);
+  assert.equal(
+    "error" in result.body ? result.body.error : "",
+    "manager_document_deletion_in_progress",
+  );
+  assert.deepEqual(outcomes, ["DENIED"]);
+});
+
 test("보호 미리보기는 10자 이상 사유를 요구하고 감사한다", async () => {
   let documentCalled = false;
   const auditCommands: Parameters<AdminManagerReviewDependencies["recordAdminAccessAudit"]>[0][] = [];
