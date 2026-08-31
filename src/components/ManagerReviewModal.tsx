@@ -88,9 +88,10 @@ export function ManagerReviewModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100"
+            disabled={isSubmitting}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
           >
-            닫기
+            {isSubmitting ? "저장 중" : "닫기"}
           </button>
         </div>
 

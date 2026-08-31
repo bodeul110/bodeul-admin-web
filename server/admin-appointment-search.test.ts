@@ -31,7 +31,12 @@ const dependencies: AdminAppointmentSearchDependencies = {
     return {uid: "admin-firebase-uid"};
   },
   async findAppUserByFirebaseUid() {
-    return {id: "5f0dcf7a-a842-4b79-985d-f94cf880db4a", role: "ADMIN"};
+    return {
+      id: "5f0dcf7a-a842-4b79-985d-f94cf880db4a",
+      role: "ADMIN",
+      adminRole: "OPERATIONS",
+      breakGlassExpiresAt: null,
+    };
   },
   async findAppointmentByPublicCode(actorAdminUserId, publicCode) {
     assert.equal(actorAdminUserId, "5f0dcf7a-a842-4b79-985d-f94cf880db4a");
@@ -119,10 +124,43 @@ test("관리자가 아니면 검색 전에 거부한다", async () => {
     {
       ...dependencies,
       async findAppUserByFirebaseUid() {
-        return {id: "manager-id", role: "MANAGER"};
+        return {
+          id: "manager-id",
+          role: "MANAGER",
+          adminRole: null,
+          breakGlassExpiresAt: null,
+        };
       },
     },
   );
 
   assert.equal(result.status, 403);
+});
+
+test("개발 관리자는 예약 검색 전에 거부한다", async () => {
+  let lookupCalled = false;
+  const result = await handleAdminAppointmentSearch(
+    "Bearer firebase-token",
+    null,
+    "BD-ABC123",
+    {
+      ...dependencies,
+      async findAppUserByFirebaseUid() {
+        return {
+          id: "developer-admin-id",
+          role: "ADMIN",
+          adminRole: "DEVELOPER",
+          breakGlassExpiresAt: null,
+        };
+      },
+      async findAppointmentByPublicCode() {
+        lookupCalled = true;
+        return {status: "FOUND", item: ITEM};
+      },
+    },
+  );
+
+  assert.equal(result.status, 403);
+  assert.equal("error" in result.body ? result.body.error : "", "admin_detail_role_forbidden");
+  assert.equal(lookupCalled, false);
 });

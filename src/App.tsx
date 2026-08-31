@@ -432,6 +432,10 @@ function ManagerApproval({
   const selectedManagerMissingCount = Math.max(0, REQUIRED_DOCUMENT_COUNT - selectedManagerUploadedCount);
 
   function openManagerReview(manager: Manager) {
+    if (isSubmitting) {
+      return;
+    }
+
     const accessReason = window.prompt("민감 서류 원문 조회 사유를 10자 이상 입력해 주세요.")?.trim() || "";
     if (accessReason.length < 10) {
       window.alert("원문 조회 사유를 10자 이상 입력해야 심사를 열 수 있습니다.");
@@ -448,13 +452,20 @@ function ManagerApproval({
     setIsSubmitting(false);
   }
 
-  function closeModal() {
+  function resetModalState() {
     setSelectedManagerId("");
     setActiveDoc("license");
     setDocStatus(INITIAL_DOC_STATUS);
     setRejectReason("");
-    setIsSubmitting(false);
     setDocumentAccessReason("");
+  }
+
+  function closeModal() {
+    if (isSubmitting) {
+      return;
+    }
+
+    resetModalState();
   }
 
   function handleToggleDocStatus(key: ManagerDocumentKey) {
@@ -517,7 +528,7 @@ function ManagerApproval({
           ? "매니저 서류를 승인했습니다."
           : "매니저 서류를 반려했습니다.",
       );
-      closeModal();
+      resetModalState();
     } catch (error) {
       console.error("Manager review save failed:", error);
       window.alert("심사 결과를 저장하지 못했습니다.");
