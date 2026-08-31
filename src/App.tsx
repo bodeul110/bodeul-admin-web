@@ -28,6 +28,7 @@ import type { AdminSessionResult } from "./adminSession";
 import { resolveBodeulApiBaseUrl, resolveBodeulDataBackend } from "./bodeulApi";
 import { AdminAuthScreen } from "./components/AdminAuthScreen";
 import { AdminShell } from "./components/AdminShell";
+import { AppointmentPublicCodeSearchPanel } from "./components/AppointmentPublicCodeSearchPanel";
 import { HospitalGuideApiPanel } from "./components/HospitalGuideApiPanel";
 import { ManagerApprovalList } from "./components/ManagerApprovalList";
 import { ManagerReviewModal } from "./components/ManagerReviewModal";
@@ -39,7 +40,7 @@ type ManagerDocumentStorageKey = ManagerDocumentKey | "healthCertificate";
 type ChecklistStatus = "미확인" | "확인 완료";
 type ManagerStatus = "대기" | "검토중" | "승인됨" | "반려";
 type ReviewStatus = "APPROVED" | "REJECTED";
-type MenuKey = "dashboard" | "approval" | "hospitalGuides";
+type MenuKey = "dashboard" | "approval" | "appointmentSearch" | "hospitalGuides";
 type PreviewStatus = "idle" | "loading" | "ready" | "missing" | "error";
 
 type StoredManagerDocumentFile = {
@@ -963,6 +964,13 @@ function App() {
       {currentMenu === "dashboard" && <Dashboard managers={managerSnapshot} />}
       {currentMenu === "approval" && (
         <ManagerApproval adminName={adminName} managers={managerSnapshot} />
+      )}
+      {currentMenu === "appointmentSearch" && (
+        <AppointmentPublicCodeSearchPanel
+          currentUser={currentAdminUser}
+          dataBackend={dataBackend}
+          apiBaseUrl={apiBaseUrl}
+        />
       )}
       {currentMenu === "hospitalGuides" && (
         <HospitalGuideApiPanel
