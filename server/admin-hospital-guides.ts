@@ -1,5 +1,6 @@
 import {
   authorizeAdmin,
+  requireAdminRole,
   type AdminAuthorizationDependencies,
 } from "./admin-auth.ts";
 
@@ -41,6 +42,10 @@ export async function handleAdminHospitalGuides(
   const authorization = await authorizeAdmin(authorizationHeader, appCheckHeader, dependencies);
   if (!authorization.ok) {
     return authorization.failure;
+  }
+  const roleFailure = requireAdminRole(authorization.actor, ["SUPER_ADMIN", "OPERATIONS"]);
+  if (roleFailure) {
+    return roleFailure;
   }
 
   const limitResult = parseHospitalGuideLimit(rawLimit);

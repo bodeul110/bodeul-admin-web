@@ -1,5 +1,6 @@
 import {
   authorizeAdmin,
+  requireAdminRole,
   type AdminAuthorizationDependencies,
 } from "./admin-auth.ts";
 
@@ -46,6 +47,11 @@ export async function handleAdminAppointmentSearch(
   const authorization = await authorizeAdmin(authorizationHeader, appCheckHeader, dependencies);
   if (!authorization.ok) {
     return authorization.failure;
+  }
+
+  const roleFailure = requireAdminRole(authorization.actor, ["SUPER_ADMIN", "OPERATIONS"]);
+  if (roleFailure) {
+    return roleFailure;
   }
 
   const publicCode = normalizePublicCode(rawPublicCode);

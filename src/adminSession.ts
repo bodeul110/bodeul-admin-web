@@ -6,6 +6,9 @@ import { db } from "../firebase";
 export type AdminSessionResult = {
   isAdmin: boolean;
   adminName: string;
+  adminRole: "SUPER_ADMIN" | "OPERATIONS" | "DEVELOPER" | null;
+  permissions: readonly string[];
+  breakGlassExpiresAt: string | null;
   message: string;
 };
 
@@ -19,6 +22,9 @@ export async function resolveAdminSession(user: FirebaseUser): Promise<AdminSess
     return {
       isAdmin: false,
       adminName: "",
+      adminRole: null,
+      permissions: [],
+      breakGlassExpiresAt: null,
       message: "사용자 정보를 찾을 수 없습니다.",
     };
   }
@@ -28,6 +34,9 @@ export async function resolveAdminSession(user: FirebaseUser): Promise<AdminSess
     return {
       isAdmin: false,
       adminName: "",
+      adminRole: null,
+      permissions: [],
+      breakGlassExpiresAt: null,
       message: "관리자 계정으로 로그인해주세요.",
     };
   }
@@ -36,6 +45,9 @@ export async function resolveAdminSession(user: FirebaseUser): Promise<AdminSess
   return {
     isAdmin: true,
     adminName,
+    adminRole: null,
+    permissions: [],
+    breakGlassExpiresAt: null,
     message: "",
   };
 }

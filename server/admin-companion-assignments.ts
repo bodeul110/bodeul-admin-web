@@ -1,5 +1,6 @@
 import {
   authorizeAdmin,
+  requireAdminRole,
   type AdminAuthorizationDependencies,
   type AdminErrorBody,
 } from "./admin-auth.ts";
@@ -37,6 +38,11 @@ export async function handleAdminCompanionAssignment(
   const authorization = await authorizeAdmin(authorizationHeader, appCheckHeader, dependencies);
   if (!authorization.ok) {
     return authorization.failure;
+  }
+
+  const roleFailure = requireAdminRole(authorization.actor, ["SUPER_ADMIN", "OPERATIONS"]);
+  if (roleFailure) {
+    return roleFailure;
   }
 
   const inputResult = parseAssignmentInput(requestBody);

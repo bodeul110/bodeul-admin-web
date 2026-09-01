@@ -19,7 +19,12 @@ const successDependencies: AdminHospitalGuidesDependencies = {
   },
   async findAppUserByFirebaseUid(uid) {
     assert.equal(uid, "admin-uid");
-    return {id: "5f0dcf7a-a842-4b79-985d-f94cf880db4a", role: "ADMIN"};
+    return {
+      id: "5f0dcf7a-a842-4b79-985d-f94cf880db4a",
+      role: "ADMIN",
+      adminRole: "OPERATIONS",
+      breakGlassExpiresAt: null,
+    };
   },
   async listHospitalGuides(limit) {
     return [{
@@ -79,12 +84,57 @@ test("PostgreSQL role이 ADMIN이 아니면 403을 반환한다", async () => {
   const result = await handleAdminHospitalGuides("Bearer firebase-token", null, null, {
     ...successDependencies,
     async findAppUserByFirebaseUid() {
-      return {id: "cd5dc083-327c-4a3d-ae65-38c4683f25eb", role: "MANAGER"};
+      return {
+        id: "cd5dc083-327c-4a3d-ae65-38c4683f25eb",
+        role: "MANAGER",
+        adminRole: null,
+        breakGlassExpiresAt: null,
+      };
     },
   });
 
   assert.equal(result.status, 403);
   assert.equal("error" in result.body ? result.body.error : "", "admin_role_required");
+});
+
+test("ADMIN 진입 자격만 있고 세부 역할이 없으면 403을 반환한다", async () => {
+  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, null, {
+    ...successDependencies,
+    async findAppUserByFirebaseUid() {
+      return {
+        id: "5f0dcf7a-a842-4b79-985d-f94cf880db4a",
+        role: "ADMIN",
+        adminRole: null,
+        breakGlassExpiresAt: null,
+      };
+    },
+  });
+
+  assert.equal(result.status, 403);
+  assert.equal("error" in result.body ? result.body.error : "", "admin_detail_role_required");
+});
+
+test("DEVELOPER는 운영 데이터인 병원 가이드를 조회하지 못한다", async () => {
+  let listCalled = false;
+  const result = await handleAdminHospitalGuides("Bearer firebase-token", null, null, {
+    ...successDependencies,
+    async findAppUserByFirebaseUid() {
+      return {
+        id: "5f0dcf7a-a842-4b79-985d-f94cf880db4a",
+        role: "ADMIN",
+        adminRole: "DEVELOPER",
+        breakGlassExpiresAt: null,
+      };
+    },
+    async listHospitalGuides() {
+      listCalled = true;
+      return [];
+    },
+  });
+
+  assert.equal(result.status, 403);
+  assert.equal("error" in result.body ? result.body.error : "", "admin_detail_role_forbidden");
+  assert.equal(listCalled, false);
 });
 
 test("role 조회 실패는 503으로 구분한다", async () => {
