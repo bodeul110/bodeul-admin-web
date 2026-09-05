@@ -10,6 +10,8 @@ import type {
   AppointmentPublicCodeSearchItem,
 } from "./admin-appointment-search";
 import {SUPABASE_ROOT_CA} from "./supabase-root-ca";
+import {parseAdminPayment, type AdminPayment, type PaymentCommand} from "../src/adminPayment";
+import {runAdminPaymentTransition} from "./admin-payment-transaction";
 
 type HospitalGuideRow = {
   readonly id: string;
@@ -318,6 +320,26 @@ export async function listHospitalGuides(limit: number): Promise<readonly Hospit
     createdAt: toTimestampString(row.created_at),
     updatedAt: toTimestampString(row.updated_at),
   }));
+}
+
+export async function readAdminPayment(actorAdminUserId: string, appointmentRequestId: string): Promise<AdminPayment> {
+  const result = await getAdminPool().query<{payment: unknown}>(
+    "select bodeul.get_admin_bank_transfer_payment($1::uuid, $2::uuid) as payment",
+    [actorAdminUserId, appointmentRequestId],
+  );
+  return parseAdminPayment(result.rows[0]?.payment);
+}
+
+export async function transitionAdminPayment(
+  actorAdminUserId: string, appointmentRequestId: string, command: PaymentCommand,
+): Promise<AdminPayment> {
+  const client = await getAdminPool().connect();
+  try {
+    return await runAdminPaymentTransition((sql, values) => client.query(sql, values),
+      actorAdminUserId, appointmentRequestId, command);
+  } finally {
+    client.release();
+  }
 }
 
 function getAdminPool(): Pool {
