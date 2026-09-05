@@ -9,6 +9,7 @@
 - React 화면은 유지하고 Next.js App Router를 기본 실행·빌드 경로로 사용한다.
 - 병원 가이드, 동행 배정, 매니저 심사, 역할 관리, 긴급 접근, 감사 조회를 Next.js server route로 운영한다.
 - Firebase Admin SDK가 ID token의 서명, 발급자, audience, 만료를 검증한다.
+- Firebase Admin SDK와 `jwks-rsa`·`jose`는 Next.js 서버 번들에 포함한다. `require(esm)` 비활성 런타임에서 발생한 SDK 로딩 오류를 해결하되 패키지 버전·App Check 검증은 유지한다. 빌드 후 제한된 Node 조건의 관리자 API smoke로 검사한다.
 - reCAPTCHA Enterprise App Check token을 `X-Firebase-AppCheck` 헤더로 받고 Firebase Admin SDK와 정확한 Web App ID로 검증한다.
 - App Check는 `off`·`observe`·`enforce`를 분리하고 VALID 요청 확인 전에는 `observe`까지만 사용한다.
 - PostgreSQL `app_users.firebase_uid`의 역할이 `ADMIN`이고 `admin_role_assignments`의 세부 역할이 활성 상태일 때만 요청을 허용한다.

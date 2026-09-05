@@ -53,6 +53,9 @@ jobs:
       - name: Build Next.js
         run: npm run build
 
+      - name: Check built admin runtime
+        run: node scripts/check-built-admin-runtime.mjs
+
       - name: Build Vite rollback
         run: npm run build:vite
 

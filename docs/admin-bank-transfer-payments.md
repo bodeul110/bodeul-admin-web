@@ -64,6 +64,19 @@
 
 화면 검증은 저장소 외부의 임시 로컬 harness에서 실제 컴포넌트에 합성 응답을 제공해 수행했다. 인증 우회 코드나 합성 사용자를 제품에 추가하지 않았다. DB 함수의 권한·감사·이력 제한·rollback은 메인 PR #406의 격리 PostgreSQL CI에서 별도로 통과했다. 이 두 결과를 실제 Vercel 계정·개발 DB 연결 검증으로 간주하지 않는다.
 
+### Preview 런타임 호환성
+
+`a683a17`의 Vercel 빌드는 성공했지만 실제 무인증 호출에서 결제 경로와 기존 병원 가이드 경로가 모두 `500`이었다. 로그에서 Firebase Admin SDK 초기 로딩 중 `jwks-rsa`의 CommonJS `require('jose')`가 ESM 모듈을 불러오지 못하는 `ERR_REQUIRE_ESM`을 확인했다. 같은 설치 상태에서 Node의 `--no-experimental-require-module` 조건으로 동일 오류를 재현했다. 따라서 배포 Node 버전이 오래됐다고 단정하거나 빌드 성공을 API 정상 동작으로 간주하지 않는다.
+
+- 선택한 방식: `firebase-admin`, `jwks-rsa`, `jose`를 Next.js `transpilePackages`로 명시하고 Firebase Admin의 external 설정을 제거한다. DB 드라이버 `pg`는 기존 external 경계를 유지한다.
+- 대안: Node·의존성 버전 교체, App Check 검증 제거, SDK 동적 import를 검토했다. 버전 교체는 승인 범위가 아니고, 검증 제거는 인증 경계를 약화한다. 동적 import만으로는 SDK 내부의 CommonJS 호출이 바뀌지 않는다.
+- 선택 이유: 현재 설정에서 재현되는 모듈 호환성만 번들 경계에서 처리해 기존 SDK·인증 코드와 패키지 버전을 유지한다. [Next.js transpilePackages](https://nextjs.org/docs/app/api-reference/config/next-config-js/transpilePackages)와 [기본 external 패키지 목록](https://nextjs.org/docs/app/api-reference/config/next-config-js/serverExternalPackages)을 근거로 삼는다.
+- 리스크: SDK의 다른 동적 로딩 경로에 영향이 있을 수 있어 결제뿐 아니라 기존 관리자 API도 실제 Preview에서 재검사한다. 무인증 차단 성공은 유효한 App Check·Firestore·Storage 작업 성공의 증거는 아니다.
+
+`scripts/check-built-admin-runtime.mjs`는 기존 빌드를 제한된 Node 조건에서 직접 실행해 관리자 API의 인증 거부 응답을 확인한다. 실제 DB·서비스 계정은 전달하지 않고 CI placeholder만 사용한다. CI의 Next.js 빌드 직후 이 검사를 실행해 빌드 단계에서 드러나지 않는 초기 모듈 로딩 오류를 차단한다.
+
+2026-09-05 로컬 재검증에서는 수정 전 빌드의 `500` 실패를 먼저 확인한 뒤, 수정 빌드의 기존 병원 가이드 GET·결제 GET/PATCH에 대해 무인증·잘못된 인증 형식·가짜 Firebase token 조합 9건이 모두 `401`, JSON, `no-store`, 고정 오류 본문으로 거부됨을 확인했다. 테스트 141건, lint, Next.js 빌드, Vite rollback 빌드, workflow YAML 파싱도 통과했다. 새 커밋의 실제 Vercel Preview 재검사 결과는 PR #51에 기록한다.
+
 ## 남은 범위와 리스크
 
 - 두 PR의 리뷰와 병합, 개발 DB V23 적용, Vercel Preview 실제 인증·DB 통합 확인이 남아 있다. 이 변경만으로 메인 이슈 #27을 닫지 않는다.
