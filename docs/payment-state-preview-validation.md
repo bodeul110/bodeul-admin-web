@@ -41,4 +41,10 @@
 
 ## 현재 확인 범위
 
-이 문서를 추가한 시점에는 검증 배포 준비 단계다. 배포가 완료되고 실제 HTTP·DB 결과가 확보되기 전에는 위 시나리오를 통과한 것으로 기록하지 않는다. 관리자 브라우저의 MFA·App Check 토큰 검증과 Production 운영 전환은 별도 범위로 유지한다.
+배포 source dry-run에서 추적된 파일만 포함되고 로컬 환경변수·인증 파일은 포함되지 않음을 확인했다. 첫 배포와 인증된 본인 계정의 ID 기반 noreply 이메일을 사용한 새 문서 커밋 배포가 모두 빌드 전 `BLOCKED`였다. 사용자 화면에서도 커밋 이메일과 Git 계정 불일치 안내를 확인했다. CLI의 종료 코드 0·ready 문구와 달리 실제 배포 상태는 성공이 아니었다.
+
+기존 병합 커밋의 작성자는 GitHub API에서 본인 계정으로 인식됐다. 이메일 표기만 바꾼 새 커밋도 동일하게 차단됐으므로 [Vercel 협업 계정 기준](https://vercel.com/docs/deployments/troubleshoot-project-collaboration)에 따라 프로젝트 소유 계정의 GitHub Login Connection을 확인해야 한다. GitHub 이메일 목록은 현재 CLI 인증 범위로 조회할 수 없었으며, 인증 범위를 임의 확대하거나 기존 이력을 다시 쓰지 않았다. noreply 주소 형식은 [GitHub 공식 기준](https://docs.github.com/en/account-and-profile/reference/email-addresses-reference)을 확인했다.
+
+실행되지 않은 검증용 배포 2건은 정확한 ID와 alias 없음·BLOCKED 상태를 확인한 뒤 제거했다. 공통 결제 쓰기 환경변수는 0건이고 기존 Production 배포는 유지됐다. 예약 생성과 결제 상태 변경은 실행하지 않았다. 개발 DB의 사용자 6건, 예약 6건, 세션 2건, 원장 1건, 이벤트 4건, 관리자 감사 2건을 유지했고 예약·원장·이벤트 전체 비교값도 전후 동일했다.
+
+계정 연결 문제를 해결하고 실제 HTTP·DB 결과를 확보하기 전에는 위 시나리오를 통과한 것으로 기록하지 않는다. 관리자 브라우저의 MFA·App Check 토큰 검증과 Production 운영 전환은 별도 범위로 유지한다.
