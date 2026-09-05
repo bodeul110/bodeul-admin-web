@@ -3,6 +3,7 @@ import type { User as FirebaseUser } from "firebase/auth";
 import {createAdminApiHeaders} from "./adminApiHeaders";
 import {getFirebaseAppCheckToken} from "./appCheck";
 import {clientEnv} from "./clientEnv";
+import {parseAdminPayment, type AdminPaymentPayload, type PaymentCommand} from "./adminPayment";
 
 export type BodeulDataBackend = "firebase" | "api";
 
@@ -362,17 +363,40 @@ export async function fetchAdminManagerDocument(
   };
 }
 
+export async function fetchAdminPayment(
+  user: FirebaseUser, appointmentRequestId: string, baseUrl: string, signal?: AbortSignal,
+): Promise<AdminPaymentPayload> {
+  return paymentPayload(await authenticatedAdminJson(user,
+    `/admin/appointments/${encodeURIComponent(appointmentRequestId)}/payment`, {method: "GET", signal}, baseUrl));
+}
+
+export async function transitionAdminPayment(
+  user: FirebaseUser, appointmentRequestId: string, command: PaymentCommand, baseUrl: string,
+): Promise<AdminPaymentPayload> {
+  return paymentPayload(await authenticatedAdminJson(user,
+    `/admin/appointments/${encodeURIComponent(appointmentRequestId)}/payment`,
+    {method: "PATCH", body: JSON.stringify(command), signal: AbortSignal.timeout(30_000)}, baseUrl));
+}
+
+function paymentPayload(value: unknown): AdminPaymentPayload {
+  if (!isRecord(value) || typeof value.transitionsEnabled !== "boolean") {
+    throw new BodeulApiError("invalid_payment_payload", "결제 응답 형식이 올바르지 않습니다.");
+  }
+  return {payment: parseAdminPayment(value.payment), transitionsEnabled: value.transitionsEnabled};
+}
+
 async function authenticatedAdminJson(
   user: FirebaseUser,
   path: string,
   init: RequestInit,
+  baseUrl = resolveBodeulApiBaseUrl(),
 ): Promise<unknown> {
   const [token, appCheckToken] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]);
   const headers = createAdminApiHeaders(token, appCheckToken);
   if (init.body) {
     headers["Content-Type"] = "application/json";
   }
-  const response = await fetch(createBodeulApiUrl(resolveBodeulApiBaseUrl(), path), {
+  const response = await fetch(createBodeulApiUrl(baseUrl, path), {
     ...init,
     headers,
     cache: "no-store",

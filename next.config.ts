@@ -29,7 +29,9 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_BODEUL_DATA_BACKEND: process.env.NEXT_PUBLIC_BODEUL_DATA_BACKEND?.trim() || "api",
     NEXT_PUBLIC_BODEUL_API_BASE_URL: process.env.NEXT_PUBLIC_BODEUL_API_BASE_URL?.trim() || "",
   },
-  serverExternalPackages: ["firebase-admin", "pg"],
+  // require(esm)이 비활성인 서버에서도 App Check의 CommonJS·ESM 경계를 번들에서 처리한다.
+  transpilePackages: ["firebase-admin", "jwks-rsa", "jose"],
+  serverExternalPackages: ["pg"],
 };
 
 export default nextConfig;

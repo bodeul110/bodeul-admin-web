@@ -1,6 +1,7 @@
 import {useState} from "react";
 import type {FormEvent} from "react";
 import type {User as FirebaseUser} from "firebase/auth";
+import {AdminPaymentPanel} from "./AdminPaymentPanel";
 
 import {
   BodeulApiError,
@@ -40,6 +41,7 @@ export function AppointmentPublicCodeSearchPanel({
     }
 
     setIsLoading(true);
+    setItem(null);
     setMessage("");
     try {
       const result = await fetchAppointmentByPublicCode(currentUser, normalizedCode, {baseUrl: apiBaseUrl});
@@ -111,6 +113,10 @@ export function AppointmentPublicCodeSearchPanel({
             <ResultField label="내부 예약 ID" value={item.id} breakAll />
           </dl>
         </section>
+      )}
+      {item && currentUser && isApiMode && (
+        <AdminPaymentPanel key={`${currentUser.uid}:${item.id}:${apiBaseUrl}`} currentUser={currentUser}
+          appointmentRequestId={item.id} apiBaseUrl={apiBaseUrl} />
       )}
     </div>
   );

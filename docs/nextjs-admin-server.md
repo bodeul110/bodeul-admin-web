@@ -9,6 +9,7 @@
 - React 화면은 유지하고 Next.js App Router를 기본 실행·빌드 경로로 사용한다.
 - 병원 가이드, 동행 배정, 매니저 심사, 역할 관리, 긴급 접근, 감사 조회를 Next.js server route로 운영한다.
 - Firebase Admin SDK가 ID token의 서명, 발급자, audience, 만료를 검증한다.
+- Firebase Admin SDK와 `jwks-rsa`·`jose`는 Next.js 서버 번들에 포함한다. `require(esm)` 비활성 런타임에서 발생한 SDK 로딩 오류를 해결하되 패키지 버전·App Check 검증은 유지한다. 빌드 후 제한된 Node 조건의 관리자 API smoke로 검사한다.
 - reCAPTCHA Enterprise App Check token을 `X-Firebase-AppCheck` 헤더로 받고 Firebase Admin SDK와 정확한 Web App ID로 검증한다.
 - App Check는 `off`·`observe`·`enforce`를 분리하고 VALID 요청 확인 전에는 `observe`까지만 사용한다.
 - PostgreSQL `app_users.firebase_uid`의 역할이 `ADMIN`이고 `admin_role_assignments`의 세부 역할이 활성 상태일 때만 요청을 허용한다.
@@ -53,6 +54,7 @@
 | `FIREBASE_STORAGE_BUCKET` | 서버 | 매니저 증빙 원본을 읽는 Storage bucket |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | 서버 | Firestore·Storage 중계 route 전용 자격 증명 |
 | `ADMIN_DATABASE_URL` | 서버 | 관리자 조회 전용 PostgreSQL 연결 |
+| `ADMIN_BANK_TRANSFER_WRITES_ENABLED` | 서버 | 기본 `false`. V23 적용 후 로컬 개발·Vercel Preview에서만 `true`로 결제 상태 기록을 허용하며 Production은 거부 |
 | `ADMIN_APP_CHECK_MODE` | 서버 | `off`, `observe`, `enforce` 전환 |
 | `MANAGER_REVIEW_OUTBOX_HMAC_KEY` | 서버 | 매니저 심사 outbox, Storage 경로 digest와 10분 문서 증거 token 서명용 32바이트 이상 난수 키. Preview와 Production은 서로 다른 값을 사용 |
 | `ADMIN_MFA_MODE` | 서버 | 관리자 다중 인증 관찰·강제 전환 |
@@ -78,6 +80,8 @@ Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. Firest
 | `GET/PUT/DELETE /admin/role-assignments` | `SUPER_ADMIN` | 역할 변경·회수 기록 |
 | `POST/DELETE /admin/break-glass` | `SUPER_ADMIN` | 2인 승인과 최대 60분 유효기간 기록 |
 | `GET /admin/audits` | `SUPER_ADMIN` | 최근 관리자 접근 기록 조회 |
+| `GET /admin/appointments/{id}/payment` | `SUPER_ADMIN`, `OPERATIONS` | 입금 대조 상세·최근 20개 이력과 `RAW_VIEW` 감사 |
+| `PATCH /admin/appointments/{id}/payment` | `SUPER_ADMIN`, `OPERATIONS`, Preview 쓰기 허용 | V22 상태 변경·`UPDATE` 감사와 V23 재조회·`RAW_VIEW`를 같은 트랜잭션으로 처리 |
 
 브라우저의 `ADMIN` 역할만으로 Firestore와 Storage에 직접 접근하는 경로는 허용하지 않는다. 관리자 기능은 세부 역할을 확인하는 Next.js 서버를 거쳐야 한다.
 역할 변경, 긴급 접근과 매니저 심사는 성공뿐 아니라 인증된 관리자의 권한 거부, 입력 거부와 저장 실패도 `DENIED` 또는 `FAILED`로 기록한다. 실패 감사에는 원문 입력이나 비밀값을 복제하지 않고 공개 오류 코드만 남기며, 감사 기록 자체가 실패하면 원 요청을 성공 처리하지 않는다.
@@ -92,6 +96,7 @@ Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. Firest
 - `bodeul.search_appointment_by_public_code(uuid, text)`: `EXECUTE`. 내부에서 관리자 역할 확인, 분당 10회 제한, 해시 감사 기록과 정확 일치 조회를 함께 처리한다.
 - 세션·리포트·후속 처리·배정 감사 테이블: `SELECT`
 - `bodeul.assign_companion_session`: `EXECUTE`
+- 결제 처리는 V22 `transition_appointment_bank_transfer_payment`와 V23 `get_admin_bank_transfer_payment`의 `EXECUTE`만 사용한다. 결제 원장·이력 테이블 직접 접근 권한은 추가하지 않는다.
 - 테이블 `INSERT`, `UPDATE`, `DELETE`: 허용하지 않음
 
 2026-07-18 개발 DB에서 함수가 `security definer`, `search_path=bodeul, pg_temp`로 고정된 것을 다시 확인했다. `bodeul_admin_runtime`만 실행할 수 있고 `bodeul_core_runtime`, `anon`, `authenticated`, `service_role`, `PUBLIC`은 실행할 수 없다. Supabase Security Advisor 경고도 0건이다.
@@ -171,6 +176,8 @@ Preview 배포 후:
 - 검색 결과에 내부 예약 UUID를 함께 표시하지만 후속 변경·인가에는 계속 내부 UUID와 별도 권한 확인을 사용한다.
 
 ## Rollback
+
+무통장입금 화면·API의 별도 적용 순서와 검증 범위는 [관리자 무통장입금 처리](admin-bank-transfer-payments.md)를 따른다. DB V23이 없는 환경에서 상세 조회를 사용하거나, Preview 확인 없이 결제 쓰기를 열지 않는다.
 
 1. 서버 검증 오류가 있으면 `ADMIN_APP_CHECK_MODE=observe`로 내려 차단만 해제한다.
 2. 서버 검증을 긴급 우회할 때만 `ADMIN_APP_CHECK_MODE=off`로 내린다.
