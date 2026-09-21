@@ -21,20 +21,13 @@
 - Vercel Preview가 Next.js 관리자 웹과 서버 route의 기본 검증 경로다.
 - Vercel Functions는 Supabase Tokyo와 같은 `hnd1`에서 실행한다.
 - Vite rollback은 CI에서 `build:vite` 산출물 생성까지만 확인하고 별도 Hosting 배포 경로를 두지 않는다.
-- Vercel Production 자격 증명과 custom domain은 원 저장소 이슈 #134의 launch gate를 통과하기 전까지 추가하지 않는다.
+- Production Firebase Auth 설정·계정 등록과 운영 DB·업무 활성화는 구분한다. 운영 DB 재개·역할 부여·실제 쓰기 활성화는 원 저장소 이슈 #134와 환경 문서의 게이트를 따르며, 문서 수정만으로 실행하지 않는다.
 - Firestore Rules, Storage Rules, Functions는 원 저장소 `bodeul110/Bodeul`이 계속 소유한다.
 - `ADMIN_DATABASE_URL`과 Firebase 서버 설정은 Next.js 서버에서만 읽고 브라우저 환경변수로 노출하지 않는다.
-- 관리자 서버는 Spring Core API나 기존 Node API를 경유하지 않고 관리자 전용 DB role로 PostgreSQL을 직접 조회한다.
+- 관리자 서버는 Spring Core API나 기존 Node API를 경유하지 않는다. 관리자 전용 DB role로 PostgreSQL을 조회하고, 쓰기는 허용된 배정·결제·감사 함수만 사용한다. 일반 테이블 직접 쓰기 권한을 추가하지 않는다.
 
 ## PR 본문
 
-PR 본문에는 최소한 다음 항목을 남긴다.
+일반 PR은 `배경`, `변경 내용`, `확인`, 필요한 경우 `참고할 점`만 짧게 작성한다. 빈 항목이나 도구 이름을 넣지 않는다. 설계·보안·인프라 변경은 선택 방식, 대안, 현재 규모에 맞는 이유와 리스크를 자연스럽게 덧붙인다.
 
-- 작업 목적
-- 선택한 방식
-- 대안
-- 선택 이유
-- 리스크
-- 변경 범위
-- 검증
-- 남은 범위
+실행한 검증과 미실행 범위를 구분하고, 과거 검증 기록을 현재 배포·DB 검증 결과로 적지 않는다.
