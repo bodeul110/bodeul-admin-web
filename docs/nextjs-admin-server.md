@@ -47,6 +47,7 @@
 
 | 이름 | 위치 | 용도 |
 | --- | --- | --- |
+| `NEXT_PUBLIC_BODEUL_DEPLOYMENT_ENV` | 브라우저 | 빌드 설정이 `VERCEL_ENV`에서 자동 주입하는 배포 환경 표시값. 별도 수동 설정 불필요 |
 | `NEXT_PUBLIC_FIREBASE_*` | 브라우저 | Firebase Web SDK 설정과 App Check provider 공개 스위치·site key |
 | `NEXT_PUBLIC_BODEUL_DATA_BACKEND` | 브라우저 | 기본 `api`, rollback은 `firebase` |
 | `NEXT_PUBLIC_BODEUL_API_BASE_URL` | 브라우저 | 비우면 동일 출처, 과거 Node 비교 시에만 외부 URL |
@@ -62,6 +63,24 @@
 | `FIREBASE_APPCHECK_ALLOWED_APP_IDS` | 서버 | 현재 배포 환경이 신뢰하는 Firebase Web App ID |
 
 Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. Firestore·Storage 중계 route의 서비스 계정 JSON은 브라우저와 저장소에 노출하지 않고 Preview와 Production을 분리한다. 매니저 심사 route는 `users` 심사 상태와 `adminAuditOutbox`를 변경하므로 Firestore 읽기·쓰기 권한이 필요하고, 증빙 원본은 Storage 객체 조회 권한만 사용한다. Admin SDK는 Rules를 우회하므로 서비스 계정에는 이 동작에 필요한 최소 IAM 권한만 부여하고 정기 회전하며, 장기 운영에서는 Vercel OIDC 기반 WIF로 교체한다.
+
+## 사이트 배포 환경 표시
+
+로그인, 세션 확인, 2차 인증과 로그인 후 화면의 상단에 배포 환경을 항상 표시한다. 색상과 함께 한국어 이름을 사용하며 스크롤 중에도 표시를 유지한다.
+
+| 빌드 시 배포 정보 | 표시 |
+| --- | --- |
+| `VERCEL_ENV=production` | 운영 환경 / 운영 배포 · Production |
+| `VERCEL_ENV=preview` | 개발 환경 / 미리보기 배포 · Preview |
+| `VERCEL_ENV=development`, 또는 배포 정보 없는 개발 서버 | 개발 환경 / 로컬 실행 · Local |
+| 배포 정보 없는 최적화된 빌드, 지원하지 않는 값 | 환경 확인 필요 |
+
+- 작업 목적: 개발용 관리자 계정으로 운영 사이트에 접속하거나 다른 환경에서 작업하는 혼동을 줄인다.
+- 선택한 방식: Next.js와 Vite 빌드 설정에서 Vercel의 배포 정보를 공개 표시값으로만 주입한다. 프로젝트 ID, 계정, DB 주소나 인증 정보는 표시하지 않는다.
+- 대안과 선택 이유: URL·브랜치명 추정이나 `NODE_ENV=production` 판별은 Preview의 최적화 빌드를 운영으로 오인할 수 있어 제외했다. 현재 단일 Vercel 프로젝트의 Production·Preview 구분을 그대로 사용하므로 별도 환경변수 수동 관리가 필요 없다.
+- 리스크: 이 표시는 **웹 빌드의 배포 환경**이며 DB·Firebase 연결 대상, 연결 성공이나 권한을 검증하는 장치가 아니다. 인증·인가와 환경별 자격 증명 분리는 기존 서버 경계를 유지한다. 시스템 환경변수 노출이 꺼져 있으면 확인 필요로 표시한다. 빌드 후 별칭만 옮기는 승격은 표시값을 바꾸지 않으므로 대상 환경으로 다시 빌드·배포한다.
+
+기준: [Vercel 시스템 환경변수](https://vercel.com/docs/environment-variables/system-environment-variables), [Next.js 빌드 환경변수](https://nextjs.org/docs/app/api-reference/config/next-config-js/env).
 
 ## 관리자 역할과 서버 route
 

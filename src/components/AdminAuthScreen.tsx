@@ -1,4 +1,14 @@
-﻿import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
+import {AdminEnvironmentBanner} from "./AdminEnvironmentBanner";
+
+function AdminAuthLayout({children}: {children: ReactNode}) {
+  return (
+    <div className="flex min-h-dvh flex-col bg-gray-50 font-sans text-sm antialiased">
+      <AdminEnvironmentBanner />
+      <main className="flex flex-1 items-center justify-center px-4 py-6">{children}</main>
+    </div>
+  );
+}
 
 type AdminAuthScreenProps = {
   isCheckingSession: boolean;
@@ -41,12 +51,12 @@ export function AdminAuthScreen({
 }: AdminAuthScreenProps) {
   if (isCheckingSession) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 font-sans text-sm antialiased">
+      <AdminAuthLayout>
         <div className="rounded-lg border border-gray-200 bg-white px-6 py-5 text-center shadow-sm">
           <p className="text-sm font-semibold text-gray-900">관리자 세션 확인 중</p>
           <p className="mt-2 text-xs text-gray-500">Firebase 인증 상태를 확인하고 있습니다.</p>
         </div>
-      </div>
+      </AdminAuthLayout>
     );
   }
 
@@ -56,7 +66,7 @@ export function AdminAuthScreen({
     );
     const isPhone = selectedFactor?.factorId === "phone";
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 font-sans text-sm antialiased">
+      <AdminAuthLayout>
         <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <h1 className="mb-1 text-base font-semibold text-gray-900">관리자 2차 인증</h1>
           <p className="mb-4 text-xs leading-5 text-gray-500">
@@ -128,12 +138,12 @@ export function AdminAuthScreen({
             </button>
           </form>
         </div>
-      </div>
+      </AdminAuthLayout>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 font-sans text-sm antialiased">
+    <AdminAuthLayout>
       <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h1 className="mb-1 text-base font-semibold text-gray-900">관리자 로그인</h1>
         <p className="mb-4 text-xs text-gray-500">
@@ -179,6 +189,6 @@ export function AdminAuthScreen({
           </button>
         </form>
       </div>
-    </div>
+    </AdminAuthLayout>
   );
 }

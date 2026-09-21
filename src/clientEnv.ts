@@ -1,4 +1,5 @@
 export const clientEnv = Object.freeze({
+  deploymentEnvironment: process.env.NEXT_PUBLIC_BODEUL_DEPLOYMENT_ENV?.trim() || "",
   firebaseApiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || "",
   firebaseAuthDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || "",
   firebaseProjectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || "",

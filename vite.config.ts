@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development'),
+      'process.env.NEXT_PUBLIC_BODEUL_DEPLOYMENT_ENV': JSON.stringify(env.VERCEL_ENV?.trim() || ''),
       'process.env.NEXT_PUBLIC_FIREBASE_API_KEY': JSON.stringify(publicEnv('NEXT_PUBLIC_FIREBASE_API_KEY', 'VITE_FIREBASE_API_KEY')),
       'process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN': JSON.stringify(publicEnv('NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN', 'VITE_FIREBASE_AUTH_DOMAIN')),
       'process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID': JSON.stringify(publicEnv('NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'VITE_FIREBASE_PROJECT_ID')),
