@@ -7,8 +7,8 @@
 - Firebase Authentication으로 관리자 신원을 확인합니다.
 - 브라우저는 reCAPTCHA Enterprise 기반 App Check token을 관리자 API 요청에 함께 보냅니다.
 - Next.js 서버가 Firebase ID token과 App Check token을 각각 검증합니다.
-- PostgreSQL `app_users`의 `ADMIN` 역할로 관리자 권한을 판정합니다.
-- 관리자 전용 DB role로 Supabase PostgreSQL을 직접 조회합니다.
+- PostgreSQL `app_users`의 `ADMIN` 진입 자격과 `admin_role_assignments`의 활성 세부 역할로 관리자 권한을 판정합니다.
+- 관리자 전용 DB role로 Supabase PostgreSQL을 직접 조회하고 허용된 업무 함수를 호출합니다.
 - Android와 사용자 웹은 별도의 Spring Core API를 사용합니다.
 
 ```mermaid
@@ -16,7 +16,7 @@ flowchart LR
     Browser["관리자 브라우저\nReact"] -->|"Firebase ID token\nApp Check token"| Next["Vercel Next.js\n관리자 서버"]
     Next -->|"token 서명·audience·만료 검증"| Auth["Firebase Auth"]
     Next -->|"token 서명·Web App ID 검증"| AppCheck["Firebase App Check\nreCAPTCHA Enterprise"]
-    Next -->|"bodeul_admin_service\n조회 전용"| DB["Supabase PostgreSQL\n공용 DB"]
+    Next -->|"bodeul_admin_service\n제한된 조회·업무 함수"| DB["Supabase PostgreSQL\n공용 DB"]
     Next -->|"이미지 형식·세대 검증\n워터마크 파생본 생성"| Storage["Firebase Storage\n매니저 증빙 원본"]
     App["사용자·매니저 앱/웹"] --> Core["Spring Core API"]
     Core --> DB
@@ -27,6 +27,7 @@ flowchart LR
 ## 현재 기능
 
 - Firebase Auth 기반 관리자 로그인
+- 로그인·2차 인증·관리 화면의 개발/운영 배포 환경 표시
 - 매니저 서류 심사 대상 조회
 - Firebase Storage 원본을 서버에서 검증·정제한 워터마크 보호 미리보기
 - 매니저 서류 승인·반려
@@ -42,7 +43,7 @@ flowchart LR
 | 웹/서버 | Next.js 16 App Router, Vercel Functions |
 | 인증 | Firebase Authentication, Firebase Admin SDK |
 | 데이터 | Supabase PostgreSQL 17, `pg` |
-| 문서 파생본 | `sharp` 0.35.3 기반 JPEG·PNG·WebP 워터마크 파생본, PDF fail-closed |
+| 문서 파생본 | `sharp` 기반 JPEG·PNG·WebP 워터마크 파생본, PDF fail-closed |
 | rollback | Vite 8 CI build |
 
 ## 서버 API
@@ -53,6 +54,8 @@ flowchart LR
 | `POST` | `/admin/appointments/public-code` | Firebase ID token + App Check + PostgreSQL `ADMIN` | JSON 본문의 `publicCode`를 정확 검색하며 감사·요청 제한 적용 |
 | `GET/POST` | `/admin/manager-reviews` | Firebase ID token + App Check + `SUPER_ADMIN`/`OPERATIONS` | 목록 조회와 증거 기반 승인·반려 |
 | `POST` | `/admin/manager-reviews/{id}/documents/{key}` | Firebase ID token + App Check + `SUPER_ADMIN`/`OPERATIONS` | 확인 사유를 감사한 뒤 워터마크 파생본과 단기 증거 token 발급 |
+
+모든 관리자 API는 PostgreSQL `ADMIN` 진입 자격과 활성 세부 역할을 함께 확인합니다. 표는 주요 API 요약이며 세부 역할별 계약은 [관리자 역할과 서버 route](docs/nextjs-admin-server.md#관리자-역할과-서버-route)를 따릅니다.
 
 `limit`은 1부터 100 사이의 정수만 허용합니다. 응답은 캐시하지 않으며 DB 장애는 `503`, 관리자 권한 부족은 `403`, 잘못된 token은 `401`로 구분합니다.
 
@@ -77,6 +80,8 @@ Copy-Item .env.example .env.local
 - `NEXT_PUBLIC_FIREBASE_APPCHECK_ENABLED` (`true`일 때만 브라우저 provider 초기화)
 - `NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY`
 
+환경 표시값 `NEXT_PUBLIC_BODEUL_DEPLOYMENT_ENV`는 빌드 설정이 `VERCEL_ENV`에서 자동 주입합니다. Vercel에 별도 값을 수동 등록할 필요는 없습니다.
+
 서버 전용값:
 
 - `FIREBASE_PROJECT_ID`
@@ -92,7 +97,7 @@ App Check는 `observe`에서 정상·누락·위조·다른 Web App ID와 검증
 ## 실행과 검증
 
 ```powershell
-npm install
+npm ci
 npm run dev
 npm run test
 npm run lint
@@ -111,21 +116,24 @@ npm run build:vite
 ## 배포
 
 - Vercel Preview: Next.js 관리자 웹과 서버 route의 기본 검증 경로
+- Vercel Production: `master` PR의 필수 검사 통과와 squash merge 뒤 자동 배포
 - Vercel Functions region: Supabase Tokyo와 같은 `hnd1`
 - Vite rollback: CI에서 정적 산출물 생성까지만 확인하며 별도 Hosting에는 배포하지 않음
-- Vercel Production: 메인 저장소 [#134](https://github.com/bodeul110/Bodeul/issues/134)의 출시 게이트 통과 후 운영 자격 증명과 custom domain 활성화
 
-Vercel Preview에는 `ADMIN_DATABASE_URL`을 Sensitive 환경변수로 저장합니다. 2026-07-17 Preview에서 실제 관리자 token `200`, 일반 사용자 token `403`, token 없음 `401`을 확인했습니다. Production에는 별도 결정 전까지 DB 자격 증명을 등록하지 않습니다.
+### 화면에서 환경 확인
 
-### Production 준비 상태
+로그인 전부터 로그인 후 관리 화면까지 상단에 환경을 표시합니다.
 
-- Google Cloud/Firebase `bodeul-prod-110`과 Supabase `bodeul-prod`는 개발 환경과 분리해 생성했습니다.
-- production `bodeul_admin_service` role은 만들었지만 Vercel 연결 전까지 `NOLOGIN`을 유지합니다.
-- Production 환경에는 `ADMIN_DATABASE_URL`을 등록하지 않았으므로 관리자 DB route는 의도대로 열리지 않습니다.
-- production reCAPTCHA Enterprise key, Web App Check provider와 Firebase Auth 기본 도메인은 구성했습니다.
-- Vercel Production의 새 배포와 App Check `observe` 반영, 정상 token 메트릭, custom domain, 관리자 MFA와 deployment rollback 검증은 출시 전에 완료해야 합니다.
+| 상단 표시 | 의미 |
+| --- | --- |
+| 운영 환경 / 운영 배포 · Production | Vercel Production으로 빌드한 웹 |
+| 개발 환경 / 미리보기 배포 · Preview | PR 등 Vercel Preview 배포 |
+| 개발 환경 / 로컬 실행 · Local | 로컬 개발 서버 |
+| 환경 확인 필요 | 빌드의 배포 환경을 판별할 수 없음 |
 
-프로젝트 생성 완료는 관리자 웹 출시 완료를 뜻하지 않습니다. 공용 인프라 생성과 DB migration 근거는 메인 저장소의 [Production 인프라 구축 기록](https://github.com/bodeul110/Bodeul/blob/master/docs/reports/production-infrastructure-bootstrap-2026-07-17.md)을 기준으로 봅니다.
+이 표시는 **웹의 배포 환경**이며 DB 연결 성공이나 서비스 출시 완료를 뜻하지 않습니다. 계정도 환경별로 준비해야 하며 Firebase 로그인 계정 등록만으로 관리자 권한이 생기지 않습니다.
+
+웹 배포는 완료했지만 운영 DB 연결과 관리자 로그인·업무 흐름의 운영 검증은 별도 출시 게이트입니다. 환경별 준비 상태와 검증 날짜는 [관리자 웹 환경 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md), 표시 판정과 재배포 주의사항은 [사이트 배포 환경 표시](docs/nextjs-admin-server.md#사이트-배포-환경-표시)를 확인합니다.
 
 ## 저장소 경계
 
