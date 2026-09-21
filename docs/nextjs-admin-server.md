@@ -54,7 +54,7 @@
 | `FIREBASE_PROJECT_ID` | 서버 | Firebase ID token audience 검증 |
 | `FIREBASE_STORAGE_BUCKET` | 서버 | 매니저 증빙 원본을 읽는 Storage bucket |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | 서버 | Firestore·Storage 중계 route 전용 자격 증명 |
-| `ADMIN_DATABASE_URL` | 서버 | 관리자 조회 전용 PostgreSQL 연결 |
+| `ADMIN_DATABASE_URL` | 서버 | 관리자 최소 권한 PostgreSQL 연결. 제한된 조회와 허용된 업무 함수 호출에 사용 |
 | `ADMIN_BANK_TRANSFER_WRITES_ENABLED` | 서버 | 기본 `false`. V23 적용 후 로컬 개발·Vercel Preview에서만 `true`로 결제 상태 기록을 허용하며 Production은 거부 |
 | `ADMIN_APP_CHECK_MODE` | 서버 | `off`, `observe`, `enforce` 전환 |
 | `MANAGER_REVIEW_OUTBOX_HMAC_KEY` | 서버 | 매니저 심사 outbox, Storage 경로 digest와 10분 문서 증거 token 서명용 32바이트 이상 난수 키. Preview와 Production은 서로 다른 값을 사용 |
@@ -81,6 +81,13 @@ Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. Firest
 - 리스크: 이 표시는 **웹 빌드의 배포 환경**이며 DB·Firebase 연결 대상, 연결 성공이나 권한을 검증하는 장치가 아니다. 인증·인가와 환경별 자격 증명 분리는 기존 서버 경계를 유지한다. 시스템 환경변수 노출이 꺼져 있으면 확인 필요로 표시한다. 빌드 후 별칭만 옮기는 승격은 표시값을 바꾸지 않으므로 대상 환경으로 다시 빌드·배포한다.
 
 기준: [Vercel 시스템 환경변수](https://vercel.com/docs/environment-variables/system-environment-variables), [Next.js 빌드 환경변수](https://nextjs.org/docs/app/api-reference/config/next-config-js/env).
+
+### 2026-09-21 반영과 검증 범위
+
+- [PR #64](https://github.com/bodeul110/bodeul-admin-web/pull/64)를 `f1ab197`로 병합했다. 해당 commit의 Build·CodeQL과 Vercel Production 배포가 성공했다.
+- 실제 Preview 로그인 화면의 `개발 환경`과 Production 로그인 화면의 `운영 환경`을 확인했다. 로컬 컴포넌트 검증에서는 로그인·세션 확인·2차 인증·로그인 후 셸과 모바일/스크롤 표시를 확인했다.
+- 이 검증에서 실제 운영 관리자 로그인이나 DB 조회·심사 흐름을 수행한 것은 아니다. 환경 표시 때문에 DB·Firebase 설정, 관리자 권한이나 App Check 모드를 변경하지 않았다.
+- 시험 명령과 배포 근거는 [환경 표시 검증 기록](https://github.com/bodeul110/Bodeul/blob/master/docs/reports/admin-web-environment-display-2026-09-21.md), 현재 운영 준비 상태는 [관리자 웹 환경 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md)에 둔다.
 
 ## 관리자 역할과 서버 route
 
@@ -120,7 +127,7 @@ Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. Firest
 
 2026-07-18 개발 DB에서 함수가 `security definer`, `search_path=bodeul, pg_temp`로 고정된 것을 다시 확인했다. `bodeul_admin_runtime`만 실행할 수 있고 `bodeul_core_runtime`, `anon`, `authenticated`, `service_role`, `PUBLIC`은 실행할 수 없다. Supabase Security Advisor 경고도 0건이다.
 
-DB password는 migration이나 문서에 넣지 않는다. 개발 DB role의 `LOGIN` 활성화와 비밀번호 회전은 Vercel Preview Sensitive 환경변수 반영과 같은 작업 단위로 수행한다. 2026-07-17 기준으로 Preview 전용 자격 증명을 등록했다. 별도 Supabase production 프로젝트에는 관리자 role을 생성했지만 Vercel 연결 전까지 `NOLOGIN`을 유지하며, Production에는 `ADMIN_DATABASE_URL`을 등록하지 않았다.
+DB password는 migration이나 문서에 넣지 않는다. 개발 DB role의 `LOGIN` 활성화와 비밀번호 회전은 Vercel Preview Sensitive 환경변수 반영과 같은 작업 단위로 수행한다. 2026-07-17에는 Preview 전용 자격 증명을 등록했고, 당시 production 관리자 role은 `NOLOGIN`, Production `ADMIN_DATABASE_URL`은 미등록 상태였다. 이 기록을 현재 DB 권한 검증으로 간주하지 않는다. 이후 상태는 [관리자 웹 환경 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md)을 확인한다.
 
 원격 PostgreSQL 연결은 [Supabase SSL configuration](https://supabase.com/docs/guides/platform/ssl-enforcement)에서 제공하는 `Supabase Root 2021 CA`를 사용한다. `rejectUnauthorized: false`나 인증서 검증 없는 연결은 허용하지 않는다.
 
@@ -212,8 +219,8 @@ Preview 배포 후:
 - Firestore·Storage Rules는 브라우저 `ADMIN` 접근을 닫는다. 이 Rules 배포와 관리자 웹 서버 환경변수 반영은 같은 출시 창에서 수행해 기능 공백을 피한다. Android의 기존 관리자 화면도 Firebase 직접 접근을 사용하므로, 해당 경로를 폐기하거나 서버 API로 이전했다는 증거 없이는 Rules를 운영에 배포하지 않는다.
 - 관리자 MFA는 `observe`로 시작하고 모든 운영 관리자 등록과 재로그인 증거를 확인한 뒤 `enforce`로 전환한다.
 - 심사 변경은 Firestore 변경과 같은 트랜잭션에 `adminAuditOutbox` PENDING 항목을 만든다. PostgreSQL 감사 성공 뒤 DELIVERED로 전환하며, 같은 작업 UUID 재시도와 심사 목록 조회 시 최대 10건을 재처리한다. 항목별 오류는 격리해 다른 감사와 심사 목록 조회를 막지 않으며, 실패 항목은 PENDING으로 남겨 다시 시도한다. 감사 함수의 8번째 `operation_id`와 partial unique index가 같은 작업의 중복 insert를 막는다. PENDING에는 재처리에 필요한 필드, 당시 관리자 역할, 현재 자격 증빙 증거 집합 digest와 서버 전용 HMAC-SHA256 키로 만든 결정적 `payloadHash`를 둬 역할 회수 뒤에도 원래 권한·문서 버전 맥락으로 감사할 수 있게 한다. HMAC 키가 없거나 32바이트보다 짧으면 Firestore 변경 전에 요청을 중단한다. 재처리할 때 원문으로 계산한 hash가 저장된 값과 다르면 해당 항목을 격리한다. DELIVERED 전환 때 사유·대상·actor·역할·증거 digest 등 원문 필드는 지운다. 이후 문서는 작업 UUID·payload hash·감사 ID·시각만 남기는 tombstone으로 사용하며 관리자 감사와 같은 1년 뒤 `expiresAt`을 기록한다. 따라서 같은 UUID의 다른 심사 내용은 Firestore 변경 전에 거부되고, 심사 원문은 장기간 중복 보관되지 않는다. 목록 조회 시 만료 tombstone을 최대 50건 정리하고, 장기간 관리자 접속이 없는 환경도 정리되도록 운영 전 Firestore TTL 정책을 같은 필드에 연결한다. HMAC 키는 비밀 저장소에서 주입하고 Preview와 Production에 서로 다른 값을 사용한다. 동일 UUID 재시도 계약을 보존하려면 키를 tombstone 보존 기간 동안 고정해야 하며, 교체가 필요하면 구 키 검증을 함께 지원하는 버전 전환을 먼저 배포한다.
-- production DB에는 Flyway V15까지 적용됐지만 관리자 DB login과 Vercel `ADMIN_DATABASE_URL`은 아직 비활성이다. 운영 role 활성화와 성공·충돌 smoke 전에는 배정 route를 공개하지 않는다.
+- production DB의 마지막 기록된 migration 검증은 Flyway V15이며, 2026-09-21 계정 등록 작업에서는 일시정지 상태를 확인하고 재개하지 않았다. 재개 승인 후 현재 schema·role·연결 상태를 다시 확인해야 한다. 과거 `NOLOGIN` 기록이나 웹 배포 성공을 현재 DB 검증으로 대신하지 않으며, 성공·충돌 smoke 전에는 운영 배정 흐름을 개방하지 않는다.
 - token revocation 즉시 확인은 현재 범위가 아니다. 관리자 세션 만료와 위험 수준을 확인한 뒤 WIF 기반 자격 증명을 검토한다.
 - App Check 클라이언트·custom backend 검증 코드는 반영했으며, 환경별 provider와 VALID 메트릭 검증은 [Issue #16](https://github.com/bodeul110/bodeul-admin-web/issues/16)에서 계속 추적한다.
-- production Google Cloud/Firebase와 Supabase 기반은 생성했다. Vercel Production DB 자격 증명, 도메인, App Check와 관리자 운영 검증은 메인 저장소 #134의 출시 게이트로 유지한다.
-- 공용 production 리소스와 DB migration의 실제 검증 결과는 메인 저장소의 [Production 인프라 구축 기록](https://github.com/bodeul110/Bodeul/blob/master/docs/reports/production-infrastructure-bootstrap-2026-07-17.md)을 따른다.
+- production Google Cloud/Firebase와 Supabase 기반 생성, Vercel Production 웹 배포와 App Check 관찰 설정은 운영 업무 흐름 검증과 구분한다. 운영 관리자 계정 등록만으로 DB 역할이나 MFA 검증을 완료 처리하지 않는다. DB 연결과 관리자 운영 검증은 메인 저장소 #134의 출시 게이트로 유지한다.
+- 공용 production 리소스의 초기 생성 근거는 [Production 인프라 구축 기록](https://github.com/bodeul110/Bodeul/blob/master/docs/reports/production-infrastructure-bootstrap-2026-07-17.md), 이후 상태는 [관리자 웹 환경 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md)을 따른다.
