@@ -133,10 +133,12 @@ npm run build:vite
 
 이 표시는 **웹의 배포 환경**이며 DB 연결 성공이나 서비스 출시 완료를 뜻하지 않습니다. 계정도 환경별로 준비해야 하며 Firebase 로그인 계정 등록만으로 관리자 권한이 생기지 않습니다.
 
-웹 배포는 완료했지만 운영 DB 연결과 관리자 로그인·업무 흐름의 운영 검증은 별도 출시 게이트입니다. 환경별 준비 상태와 검증 날짜는 [관리자 웹 환경 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md), 표시 판정과 재배포 주의사항은 [사이트 배포 환경 표시](docs/nextjs-admin-server.md#사이트-배포-환경-표시)를 확인합니다.
+웹 배포는 완료했지만 운영 DB 연결과 관리자 로그인·업무 흐름의 운영 검증은 별도 출시 게이트입니다. 환경별 준비 상태와 검증 날짜는 [관리자 웹 환경 기준](https://github.com/bodeul110/bodeul-platform/blob/master/docs/operations/admin-web-environments.md), 표시 판정과 재배포 주의사항은 [사이트 배포 환경 표시](docs/nextjs-admin-server.md#사이트-배포-환경-표시)를 확인합니다.
 
 ## 저장소 경계
 
-이 저장소는 관리자 웹 UI, Next.js 관리자 서버, 관리자 웹 CI·배포 설정을 소유합니다. Android, Spring Core API, PostgreSQL migration, Firebase Rules와 Functions, 공통 아키텍처 문서는 [bodeul110/Bodeul](https://github.com/bodeul110/Bodeul)에서 관리합니다.
+이 저장소는 관리자 웹 UI, Next.js 관리자 서버, 관리자 웹 CI·배포 설정을 소유합니다. Android, Spring Core API, PostgreSQL migration, Firebase Rules와 Functions, 공통 아키텍처 문서는 [bodeul110/bodeul-platform](https://github.com/bodeul110/bodeul-platform)에서 관리합니다.
+
+GitHub 저장소와 Vercel 프로젝트 이름은 `bodeul-admin-web`을 유지합니다. 표시 이름은 Vercel 팀 `BoDeul`, 개발 DB `bodeul-db-dev`, 운영 DB `bodeul-db-prod`로 구분합니다. 접속 주소와 리소스 식별자는 바꾸지 않습니다. 전체 대응표는 [프로젝트와 인프라 명칭](https://github.com/bodeul110/bodeul-platform/blob/master/docs/operations/resource-naming.md)을 확인합니다.
 
 상세 운영 기준은 [Next.js 관리자 서버 전환 기록](docs/nextjs-admin-server.md)을 확인합니다.
