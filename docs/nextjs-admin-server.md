@@ -87,7 +87,7 @@ Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. Firest
 - [PR #64](https://github.com/bodeul110/bodeul-admin-web/pull/64)를 `f1ab197`로 병합했다. 해당 commit의 Build·CodeQL과 Vercel Production 배포가 성공했다.
 - 실제 Preview 로그인 화면의 `개발 환경`과 Production 로그인 화면의 `운영 환경`을 확인했다. 로컬 컴포넌트 검증에서는 로그인·세션 확인·2차 인증·로그인 후 셸과 모바일/스크롤 표시를 확인했다.
 - 이 검증에서 실제 운영 관리자 로그인이나 DB 조회·심사 흐름을 수행한 것은 아니다. 환경 표시 때문에 DB·Firebase 설정, 관리자 권한이나 App Check 모드를 변경하지 않았다.
-- 시험 명령과 배포 근거는 [환경 표시 검증 기록](https://github.com/bodeul110/Bodeul/blob/master/docs/reports/admin-web-environment-display-2026-09-21.md), 현재 운영 준비 상태는 [관리자 웹 환경 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md)에 둔다.
+- 시험 명령과 배포 근거는 [환경 표시 검증 기록](https://github.com/bodeul110/bodeul-platform/blob/master/docs/reports/admin-web-environment-display-2026-09-21.md), 현재 운영 준비 상태는 [관리자 웹 환경 기준](https://github.com/bodeul110/bodeul-platform/blob/master/docs/operations/admin-web-environments.md)에 둔다.
 
 ## 관리자 역할과 서버 route
 
@@ -127,7 +127,7 @@ Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. Firest
 
 2026-07-18 개발 DB에서 함수가 `security definer`, `search_path=bodeul, pg_temp`로 고정된 것을 다시 확인했다. `bodeul_admin_runtime`만 실행할 수 있고 `bodeul_core_runtime`, `anon`, `authenticated`, `service_role`, `PUBLIC`은 실행할 수 없다. Supabase Security Advisor 경고도 0건이다.
 
-DB password는 migration이나 문서에 넣지 않는다. 개발 DB role의 `LOGIN` 활성화와 비밀번호 회전은 Vercel Preview Sensitive 환경변수 반영과 같은 작업 단위로 수행한다. 2026-07-17에는 Preview 전용 자격 증명을 등록했고, 당시 production 관리자 role은 `NOLOGIN`, Production `ADMIN_DATABASE_URL`은 미등록 상태였다. 이 기록을 현재 DB 권한 검증으로 간주하지 않는다. 이후 상태는 [관리자 웹 환경 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md)을 확인한다.
+DB password는 migration이나 문서에 넣지 않는다. 개발 DB role의 `LOGIN` 활성화와 비밀번호 회전은 Vercel Preview Sensitive 환경변수 반영과 같은 작업 단위로 수행한다. 2026-07-17에는 Preview 전용 자격 증명을 등록했고, 당시 production 관리자 role은 `NOLOGIN`, Production `ADMIN_DATABASE_URL`은 미등록 상태였다. 이 기록을 현재 DB 권한 검증으로 간주하지 않는다. 이후 상태는 [관리자 웹 환경 기준](https://github.com/bodeul110/bodeul-platform/blob/master/docs/operations/admin-web-environments.md)을 확인한다.
 
 원격 PostgreSQL 연결은 [Supabase SSL configuration](https://supabase.com/docs/guides/platform/ssl-enforcement)에서 제공하는 `Supabase Root 2021 CA`를 사용한다. `rejectUnauthorized: false`나 인증서 검증 없는 연결은 허용하지 않는다.
 
@@ -223,4 +223,4 @@ Preview 배포 후:
 - token revocation 즉시 확인은 현재 범위가 아니다. 관리자 세션 만료와 위험 수준을 확인한 뒤 WIF 기반 자격 증명을 검토한다.
 - App Check 클라이언트·custom backend 검증 코드는 반영했으며, 환경별 provider와 VALID 메트릭 검증은 [Issue #16](https://github.com/bodeul110/bodeul-admin-web/issues/16)에서 계속 추적한다.
 - production Google Cloud/Firebase와 Supabase 기반 생성, Vercel Production 웹 배포와 App Check 관찰 설정은 운영 업무 흐름 검증과 구분한다. 운영 관리자 계정 등록만으로 DB 역할이나 MFA 검증을 완료 처리하지 않는다. DB 연결과 관리자 운영 검증은 메인 저장소 #134의 출시 게이트로 유지한다.
-- 공용 production 리소스의 초기 생성 근거는 [Production 인프라 구축 기록](https://github.com/bodeul110/Bodeul/blob/master/docs/reports/production-infrastructure-bootstrap-2026-07-17.md), 이후 상태는 [관리자 웹 환경 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md)을 따른다.
+- 공용 production 리소스의 초기 생성 근거는 [Production 인프라 구축 기록](https://github.com/bodeul110/bodeul-platform/blob/master/docs/reports/production-infrastructure-bootstrap-2026-07-17.md), 이후 상태는 [관리자 웹 환경 기준](https://github.com/bodeul110/bodeul-platform/blob/master/docs/operations/admin-web-environments.md)을 따른다.

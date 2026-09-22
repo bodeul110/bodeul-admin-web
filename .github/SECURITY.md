@@ -2,9 +2,9 @@
 
 ## 지원 범위
 
-현재 저장소의 기본 브랜치 `master`와 공개된 최신 PR 기준으로 보안 제보를 검토한다. 관리자 웹 UI, Firebase Web config, App Check 설정, Firebase Hosting, GitHub Actions 변경은 우선 확인 대상이다.
+현재 저장소의 기본 브랜치 `master`와 공개된 최신 PR 기준으로 보안 제보를 검토한다. 관리자 웹 UI와 Next.js 관리자 서버, Firebase Web config, App Check 설정, Vercel, GitHub Actions 변경은 우선 확인 대상이다.
 
-Firestore Rules, Storage Rules, Functions, Android 앱, `bodeul-api`처럼 원 저장소가 소유하는 영역의 취약점은 [bodeul110/Bodeul](https://github.com/bodeul110/Bodeul) 이슈 또는 보안 제보 경로와 함께 연결한다.
+Firestore Rules, Storage Rules, Functions, Android 앱, Spring `core-api/`처럼 원 저장소가 소유하는 영역의 취약점은 [bodeul110/bodeul-platform](https://github.com/bodeul110/bodeul-platform)의 보안 제보 경로로 연결한다.
 
 ## 취약점 제보
 

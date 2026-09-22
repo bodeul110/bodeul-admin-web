@@ -81,7 +81,7 @@
 
 ## 남은 범위와 리스크
 
-- 운영 Firebase Auth 계정 등록과 웹의 `운영 환경` 표시는 운영 DB 접속·세부 역할·MFA·결제 활성화 증명이 아니다. 운영 환경에서도 결제 쓰기 차단을 유지한다. [메인 환경 기준](https://github.com/bodeul110/Bodeul/blob/master/docs/operations/admin-web-environments.md)을 따른다.
+- 운영 Firebase Auth 계정 등록과 웹의 `운영 환경` 표시는 운영 DB 접속·세부 역할·MFA·결제 활성화 증명이 아니다. 운영 환경에서도 결제 쓰기 차단을 유지한다. [메인 환경 기준](https://github.com/bodeul110/bodeul-platform/blob/master/docs/operations/admin-web-environments.md)을 따른다.
 
 - 메인 PR #406과 웹 PR #51 병합, 개발 DB V23 적용, 실제 인증·DB 조회·상태 전이 검증은 완료했다. 2026-09-06 합성 예약의 정상 입금·취소 후 검토·환불, 중복·충돌·권한 경계와 임시 배포 정리는 [실연동 검증 기록](payment-state-preview-validation.md#2026-09-06-실제-결제-상태-전이-검증)을 따른다. 실제 관리자 브라우저의 MFA·App Check 검증과 Production 운영 전환은 별도이므로 메인 이슈 #27은 유지한다.
 - 예약 상태와 결제 검토 상태는 별개다. 취소된 예약도 결제가 `REVIEW_REQUIRED`이면 환자가 입금자명을 정정할 수 있지만, 관리자는 입금 확인으로 되돌릴 수 없고 환불로만 진행할 수 있다. 최종 환불 상태에서는 정정도 거부된다.
