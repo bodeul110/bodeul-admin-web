@@ -73,6 +73,14 @@ test("오류에 연결 문자열과 비밀번호를 노출하지 않는다", () 
   });
 });
 
+test("DB URL 옵션으로 연결 대상·계정·TLS 설정을 덮어쓸 수 없다", () => {
+  const env = environment();
+  for (const suffix of ["?host=localhost", "?user=postgres", "?port=1234",
+    "?sslmode=disable", "?ssl=0", "#other-database"]) {
+    assert.throws(() => assertAdminDatabaseBoundary(env.ADMIN_DATABASE_URL + suffix, env));
+  }
+});
+
 test("설정 일부 누락과 미지원 Vercel 환경은 fail-closed로 처리한다", () => {
   const env = environment();
   for (const key of Object.keys(env).filter((name) => !name.startsWith("VERCEL"))) {

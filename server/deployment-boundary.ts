@@ -64,7 +64,8 @@ export function assertAdminDatabaseBoundary(connectionString: string, env: Deplo
     && username === `bodeul_admin_service.${expected.databaseRef}`
     && ["", "5432", "6543"].includes(url.port);
   if (!["postgres:", "postgresql:"].includes(url.protocol)
-    || url.pathname !== "/postgres" || !url.password || (!direct && !pooler)) {
+    || url.pathname !== "/postgres" || !url.password || url.search || url.hash || (!direct && !pooler)) {
+    // pg는 query의 host/user/SSL 옵션을 우선하므로 연결·TLS 설정은 서버에서만 지정한다.
     throw new Error("관리자 DB의 프로젝트·리전·전용 role이 배포 환경과 일치하지 않습니다.");
   }
 }
