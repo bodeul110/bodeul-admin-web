@@ -16,13 +16,15 @@ flowchart LR
     Browser["관리자 브라우저\nReact"] -->|"Firebase ID token\nApp Check token"| Next["Vercel Next.js\n관리자 서버"]
     Next -->|"token 서명·audience·만료 검증"| Auth["Firebase Auth"]
     Next -->|"token 서명·Web App ID 검증"| AppCheck["Firebase App Check\nreCAPTCHA Enterprise"]
-    Next -->|"bodeul_admin_service\n제한된 조회·업무 함수"| DB["Supabase PostgreSQL\n공용 DB"]
+    Next -->|"bodeul_admin_service\n제한된 조회·업무 함수"| DB["Supabase PostgreSQL\n같은 환경의 공용 DB"]
     Next -->|"이미지 형식·세대 검증\n워터마크 파생본 생성"| Storage["Firebase Storage\n매니저 증빙 원본"]
     App["사용자·매니저 앱/웹"] --> Core["Spring Core API"]
     Core --> DB
 ```
 
 관리자 요청이 기존 Node API나 Spring Core API를 다시 거쳐 DB로 가는 proxy 체인은 만들지 않습니다.
+
+개발과 운영은 서로 다른 Firebase·PostgreSQL을 사용합니다. 위 공용 DB는 같은 환경 안에서 관리자 서버와 Core API가 공유한다는 뜻입니다.
 
 ## 현재 기능
 
@@ -88,6 +90,7 @@ Copy-Item .env.example .env.local
 - `ADMIN_DATABASE_URL`
 - `MANAGER_REVIEW_OUTBOX_HMAC_KEY` (outbox와 문서 증거 서명용, Preview와 Production별 32바이트 이상 난수 키)
 - `ADMIN_APP_CHECK_MODE` (`off`, `observe`, `enforce`)
+- `ADMIN_MFA_MODE`, `ADMIN_MFA_ENFORCE_READY` (등록 확인과 전체 강제 전환을 구분)
 - `FIREBASE_APPCHECK_ALLOWED_APP_IDS`
 
 `ADMIN_DATABASE_URL`은 Supabase transaction pooler의 6543 포트와 `bodeul_admin_service`를 사용합니다. 서버는 Supabase 공개 Root CA로 인증서와 호스트명을 검증합니다. DB URL, 서비스 계정, App Check debug token은 브라우저 환경변수나 저장소에 넣지 않습니다.
@@ -115,8 +118,8 @@ npm run build:vite
 
 ## 배포
 
-- Vercel Preview: Next.js 관리자 웹과 서버 route의 기본 검증 경로
-- Vercel Production: `master` PR의 필수 검사 통과와 squash merge 뒤 자동 배포
+- Vercel Preview: 기능 PR을 `dev`에 squash merge해 개발 Firebase·DB로 검증
+- Vercel Production: 검증된 `dev → master` 출시 PR을 merge commit으로 반영한 뒤 운영 설정으로 새로 빌드
 - Vercel Functions region: Supabase Tokyo와 같은 `hnd1`
 - Vite rollback: CI에서 정적 산출물 생성까지만 확인하며 별도 Hosting에는 배포하지 않음
 
@@ -133,7 +136,7 @@ npm run build:vite
 
 이 표시는 **웹의 배포 환경**이며 DB 연결 성공이나 서비스 출시 완료를 뜻하지 않습니다. 계정도 환경별로 준비해야 하며 Firebase 로그인 계정 등록만으로 관리자 권한이 생기지 않습니다.
 
-웹 배포는 완료했지만 운영 DB 연결과 관리자 로그인·업무 흐름의 운영 검증은 별도 출시 게이트입니다. 환경별 준비 상태와 검증 날짜는 [관리자 웹 환경 기준](https://github.com/bodeul110/bodeul-platform/blob/master/docs/operations/admin-web-environments.md), 표시 판정과 재배포 주의사항은 [사이트 배포 환경 표시](docs/nextjs-admin-server.md#사이트-배포-환경-표시)를 확인합니다.
+운영 DB 연결·최초 관리자 로그인과 실제 업무 흐름의 출시 검증은 구분합니다. 접속 주소와 준비 상태는 [개발·운영 환경](docs/dev-production.md), 표시 판정과 재배포 주의사항은 [사이트 배포 환경 표시](docs/nextjs-admin-server.md#사이트-배포-환경-표시)를 확인합니다.
 
 ## 저장소 경계
 
