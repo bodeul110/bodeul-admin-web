@@ -22,6 +22,8 @@
 
 ## 선택 근거
 
+Vercel 빌드와 서버 연결 시 Firebase 프로젝트·앱 ID·Storage 및 PostgreSQL 프로젝트·Tokyo 리전·`bodeul_admin_service` role을 검사한다. 다른 환경의 값이나 누락된 DB 설정은 배포 실패로 처리한다. 로컬·CI placeholder는 실제 배포와 구분하며 Vercel 검사를 끄는 예외 변수는 제공하지 않는다.
+
 - 작업 목적: 개발 코드·데이터가 운영 환경에 섞이는 실수를 막는다.
 - 선택한 방식: 기존 Vercel 프로젝트와 개발·운영 DB를 유지하고 Git 브랜치와 환경변수를 분리한다.
 - 대안: 별도 staging 프로젝트 추가 또는 `master` 하나에서 수동 환경 전환을 검토했다.

@@ -16,6 +16,7 @@ import {classifyFirebaseAdminAppCheckError} from "./firebase-app-check-error";
 import type {VerifiedFirebaseIdentity} from "./admin-auth";
 import type {AdminMfaMode} from "./admin-auth";
 import {resolveAdminMfaMode} from "./admin-mfa-mode";
+import {assertFirebaseDeploymentBoundary} from "./deployment-boundary";
 
 const APP_NAME = "bodeul-admin-web-server";
 
@@ -64,6 +65,7 @@ function recordAdminAppCheckVerdict(verdict: AdminAppCheckVerdict, mode: AdminAp
 }
 
 export function getFirebaseAdminApp() {
+  assertFirebaseDeploymentBoundary(process.env);
   const existing = getApps().find((app) => app.name === APP_NAME);
   if (existing) {
     return existing;
