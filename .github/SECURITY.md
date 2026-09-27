@@ -2,7 +2,7 @@
 
 ## 지원 범위
 
-현재 저장소의 기본 브랜치 `master`와 공개된 최신 PR 기준으로 보안 제보를 검토한다. 관리자 웹 UI와 Next.js 관리자 서버, Firebase Web config, App Check 설정, Vercel, GitHub Actions 변경은 우선 확인 대상이다.
+현재 저장소의 운영 브랜치 `master`, 개발 브랜치 `dev`와 공개된 최신 PR 기준으로 보안 제보를 검토한다. 관리자 웹 UI와 Next.js 관리자 서버, Firebase Web config, App Check 설정, Vercel, GitHub Actions 변경은 우선 확인 대상이다.
 
 Firestore Rules, Storage Rules, Functions, Android 앱, Spring `core-api/`처럼 원 저장소가 소유하는 영역의 취약점은 [bodeul110/bodeul-platform](https://github.com/bodeul110/bodeul-platform)의 보안 제보 경로로 연결한다.
 
@@ -22,5 +22,5 @@ Firestore Rules, Storage Rules, Functions, Android 앱, Spring `core-api/`처럼
 
 - 제보를 확인한 뒤 영향 범위와 우선순위를 정한다.
 - 실제 비밀값 유출 가능성이 있으면 해당 값은 즉시 폐기하고 재발급한다.
-- 보안 수정 PR은 관련 Issue나 Security Advisory와 연결하고 `npm run lint`, `npm run build`를 수행한다.
+- 보안 수정 PR은 관련 Issue나 Security Advisory와 연결하고 `npm run test`, `npm run lint`, `npm run build`를 수행한다. 영향 경로의 회귀 검증과 운영 긴급 수정 뒤 `master → dev` 동기화를 함께 확인한다.
 - 공개 가능한 정보만 일반 Issue나 PR에 남긴다.
