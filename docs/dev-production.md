@@ -1,5 +1,7 @@
 # 관리자 웹 개발·운영 분리
 
+기준일: 2026-09-27. 실제 구성 근거는 메인 저장소의 당일 실행 기록이며, 이 문서 갱신에서 운영 설정을 다시 변경하지 않았다.
+
 | 구분 | 개발 | 운영 |
 | --- | --- | --- |
 | 브랜치 | `dev` | `master` |
@@ -7,6 +9,7 @@
 | Firebase 프로젝트 | `bodeul-dev` | `bodeul-prod-110` |
 | PostgreSQL 프로젝트 | `bodeul-db-dev` | `bodeul-db-prod` |
 | DB 사용자 | 개발 DB의 관리자 전용 role | 운영 DB의 별도 관리자 전용 role |
+| 접속 주소 | [개발 웹](https://bodeul-admin-web-git-dev-bodeul110.vercel.app/) | [운영 웹](https://bodeul-admin-web-iota.vercel.app/) |
 
 브라우저는 관리자 Next.js 서버만 호출한다. 서버는 해당 환경의 PostgreSQL을 직접 조회하며 Spring Core API를 중간 proxy로 사용하지 않는다. 같은 환경의 사용자·매니저 서비스와 DB는 공유하지만 DB 비밀번호와 권한은 분리한다.
 
@@ -21,6 +24,19 @@
 기본 브랜치는 `master`를 유지한다. 기존 팀원 PR은 자동으로 base를 바꾸지 않는다. 서버용 환경변수는 브라우저에 노출하지 않으며, Preview·Production에 같은 `ADMIN_DATABASE_URL`을 넣지 않는다. 운영 배포 성공은 실제 DB 연결과 업무 권한 검증까지 성공했다는 의미가 아니다.
 
 `ADMIN_DATABASE_URL`에는 query나 fragment를 넣지 않는다. `pg`는 URL 옵션으로 호스트·계정·TLS 설정을 덮어쓸 수 있으므로, 연결 대상은 URL 본문에만 적고 TLS는 서버의 인증서 검증 설정을 사용한다.
+
+## 확인된 구성과 남은 범위
+
+| 구분 | 9월 27일 확인 범위 |
+| --- | --- |
+| DB | 양쪽 Supabase Pro·Tokyo·Flyway V23, 실패 이력 0건 |
+| 운영 서버 연결 | 운영 전용 `bodeul_admin_service` 로그인·TLS 연결, Production `ADMIN_DATABASE_URL` 등록. 테이블 직접 쓰기 차단 유지 |
+| 관리자 진입 | Firebase 이메일 인증·TOTP 등록 후 최초 `SUPER_ADMIN`을 명시 승인으로 등록하고 사용자가 실제 대시보드 진입 확인 |
+| 권한 기준 | Firebase 신원 확인 후 PostgreSQL `ADMIN`과 활성 세부 역할 검사. 로그인 전에 Firestore 사용자 문서를 요구하지 않음 |
+| 남은 보안 전환 | MFA와 App Check 전체 강제는 별도. 관리자 한 명의 TOTP 성공을 전체 강제 완료로 보지 않음 |
+| 남은 업무 검증 | 운영 심사·배정·결제의 성공/충돌/복구 흐름. Production 결제 쓰기는 계속 차단 |
+
+운영 DB가 일시정지됐거나 관리자 계정 등록만 끝났다는 과거 기록은 현재 상태가 아니다. 반대로 첫 로그인 성공이 모든 관리자·업무 기능의 검증 완료를 뜻하지도 않는다. DB 서비스 자격 증명과 사람이 사용하는 관리자 역할은 서로 별도로 관리한다.
 
 ## 선택 근거
 
