@@ -20,7 +20,11 @@
 
 기본 브랜치는 `master`를 유지한다. 기존 팀원 PR은 자동으로 base를 바꾸지 않는다. 서버용 환경변수는 브라우저에 노출하지 않으며, Preview·Production에 같은 `ADMIN_DATABASE_URL`을 넣지 않는다. 운영 배포 성공은 실제 DB 연결과 업무 권한 검증까지 성공했다는 의미가 아니다.
 
+`ADMIN_DATABASE_URL`에는 query나 fragment를 넣지 않는다. `pg`는 URL 옵션으로 호스트·계정·TLS 설정을 덮어쓸 수 있으므로, 연결 대상은 URL 본문에만 적고 TLS는 서버의 인증서 검증 설정을 사용한다.
+
 ## 선택 근거
+
+Vercel 빌드와 서버 연결 시 Firebase 프로젝트·앱 ID·Storage 및 PostgreSQL 프로젝트·Tokyo 리전·`bodeul_admin_service` role을 검사한다. 다른 환경의 값이나 누락된 DB 설정은 배포 실패로 처리한다. 로컬·CI placeholder는 실제 배포와 구분하며 Vercel 검사를 끄는 예외 변수는 제공하지 않는다.
 
 - 작업 목적: 개발 코드·데이터가 운영 환경에 섞이는 실수를 막는다.
 - 선택한 방식: 기존 Vercel 프로젝트와 개발·운영 DB를 유지하고 Git 브랜치와 환경변수를 분리한다.
