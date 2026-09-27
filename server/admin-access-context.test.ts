@@ -83,6 +83,38 @@ test("세부 역할이 없으면 ADMIN이어도 fail-closed로 거부한다", as
   assert.equal("error" in result.body ? result.body.error : "", "admin_detail_role_required");
 });
 
+test("Firebase 인증만 성공하고 PostgreSQL 사용자 등록이 없으면 거부한다", async () => {
+  const result = await handleAdminAccessContext("Bearer firebase-token", null, {
+    ...dependencies("SUPER_ADMIN"),
+    async findAppUserByFirebaseUid() { return null; },
+  });
+
+  assert.equal(result.status, 403);
+  assert.equal("error" in result.body ? result.body.error : "", "admin_role_required");
+});
+
+test("PostgreSQL의 일반 사용자는 관리자 진입 권한이 없다", async () => {
+  const result = await handleAdminAccessContext("Bearer firebase-token", null, {
+    ...dependencies("SUPER_ADMIN"),
+    async findAppUserByFirebaseUid() {
+      return {id: "patient-id", role: "PATIENT", adminRole: null, breakGlassExpiresAt: null};
+    },
+  });
+
+  assert.equal(result.status, 403);
+  assert.equal("error" in result.body ? result.body.error : "", "admin_role_required");
+});
+
+test("PostgreSQL 권한 조회 장애는 관리자 세션으로 허용하지 않는다", async () => {
+  const result = await handleAdminAccessContext("Bearer firebase-token", null, {
+    ...dependencies("SUPER_ADMIN"),
+    async findAppUserByFirebaseUid() { throw new Error("연결 실패"); },
+  });
+
+  assert.equal(result.status, 503);
+  assert.equal("error" in result.body ? result.body.error : "", "role_lookup_failed");
+});
+
 test("MFA enforce 모드는 2차 인증 없는 token을 DB 조회 전에 거부한다", async () => {
   let databaseCalled = false;
   const result = await handleAdminAccessContext(
