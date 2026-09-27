@@ -18,6 +18,10 @@
 
 ## 배포 경계
 
+- 새 기능은 `dev` 대상 PR로 통합한다. 일반 기능 PR은 squash, `dev → master` 출시와 `master → dev` 동기화는 merge commit을 사용한다.
+- `dev`는 Vercel Preview와 개발 Firebase·DB만 사용하고, `master`는 Production과 운영 Firebase·DB만 사용한다. 서로 다른 환경의 배포 산출물을 그대로 승격하지 않고 대상 환경으로 다시 빌드한다.
+- 두 장기 브랜치는 PR·필수 CI를 유지하며 삭제와 force push를 금지한다. 실제 적용 결과는 원 저장소의 [개발·운영 분리 실행 기록](https://github.com/bodeul110/bodeul-platform/blob/master/docs/reports/dev-production-separation-2026-09-27.md)을 따른다.
+
 - Vercel Preview가 Next.js 관리자 웹과 서버 route의 기본 검증 경로다.
 - Vercel Functions는 Supabase Tokyo와 같은 `hnd1`에서 실행한다.
 - Vite rollback은 CI에서 `build:vite` 산출물 생성까지만 확인하고 별도 Hosting 배포 경로를 두지 않는다.
