@@ -10,6 +10,7 @@ import type {
   AppointmentPublicCodeSearchItem,
 } from "./admin-appointment-search";
 import {SUPABASE_ROOT_CA} from "./supabase-root-ca";
+import {assertAdminDatabaseBoundary} from "./deployment-boundary";
 import {parseAdminPayment, type AdminPayment, type PaymentCommand} from "../src/adminPayment";
 import {runAdminPaymentTransition} from "./admin-payment-transaction";
 
@@ -355,6 +356,8 @@ function createPoolConfig(): PoolConfig {
   if (!connectionString) {
     throw new Error("ADMIN_DATABASE_URL이 설정되지 않았습니다.");
   }
+
+  assertAdminDatabaseBoundary(connectionString, process.env);
 
   const hostname = new URL(connectionString).hostname.toLowerCase();
   const isLocalDatabase = hostname === "localhost" || hostname === "127.0.0.1";
