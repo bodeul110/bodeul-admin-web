@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {doc, getDoc} from "firebase/firestore";
 import {
   getMultiFactorResolver,
   onAuthStateChanged,
@@ -14,8 +13,8 @@ import {
   type MultiFactorResolver,
   type User as FirebaseUser,
 } from "firebase/auth";
-import {auth, db} from "../firebase";
-import type { AdminSessionResult } from "./adminSession";
+import {auth} from "../firebase";
+import { adminSessionErrorMessage, resolveAdminSession } from "./adminSession";
 import {
   BodeulApiError,
   fetchAdminAccessContext,
@@ -112,46 +111,6 @@ function buildPreviewState(status: PreviewStatus): Record<ManagerDocumentKey, Do
   return {
     license: createPreview(status),
     nursingLicense: createPreview(status),
-  };
-}
-
-async function resolveAdminSession(user: FirebaseUser): Promise<AdminSessionResult> {
-  const userDoc = await getDoc(doc(db, "users", user.uid));
-  if (!userDoc.exists()) {
-    return {
-      isAdmin: false,
-      adminName: "",
-      adminRole: null,
-      permissions: [],
-      breakGlassExpiresAt: null,
-      message: "사용자 정보를 찾을 수 없습니다.",
-    };
-  }
-
-  const userData = userDoc.data();
-  if (!userData || userData.role !== "ADMIN") {
-    return {
-      isAdmin: false,
-      adminName: "",
-      adminRole: null,
-      permissions: [],
-      breakGlassExpiresAt: null,
-      message: "관리자 계정으로 로그인해주세요.",
-    };
-  }
-
-  const adminName = typeof userData.name === "string" && userData.name.trim()
-    ? userData.name.trim()
-    : "관리자";
-
-  const accessContext = await fetchAdminAccessContext(user);
-  return {
-    isAdmin: true,
-    adminName,
-    adminRole: accessContext.role,
-    permissions: accessContext.permissions,
-    breakGlassExpiresAt: accessContext.breakGlassExpiresAt,
-    message: "",
   };
 }
 
@@ -687,14 +646,8 @@ function App() {
       }
 
       try {
-        const session = await resolveAdminSession(user);
+        const session = await resolveAdminSession(user, fetchAdminAccessContext);
         if (!active) {
-          return;
-        }
-
-        if (!session.isAdmin) {
-          clearAdminSession(session.message);
-          await signOut(auth);
           return;
         }
 
@@ -702,14 +655,13 @@ function App() {
         setIsLoggedIn(true);
         setAdminName(session.adminName);
         setAdminRole(session.adminRole);
-        setAdminPermissions(session.permissions as readonly AdminPermission[]);
+        setAdminPermissions(session.permissions);
         setAuthError("");
         setManagerLoadError("");
       } catch (error) {
-        console.error("Admin session validation failed:", error);
-        const message = error instanceof BodeulApiError && error.code === "admin_mfa_required"
-          ? "관리자 2차 인증이 필요한 세션입니다. 이메일과 비밀번호로 다시 로그인해 주세요."
-          : "관리자 세션을 확인하지 못했습니다.";
+        const code = error instanceof BodeulApiError ? error.code : undefined;
+        console.error("관리자 세션 검증 실패:", code || "unknown_error");
+        const message = adminSessionErrorMessage(code);
         clearAdminSession(message);
         await signOut(auth).catch(() => undefined);
       } finally {
