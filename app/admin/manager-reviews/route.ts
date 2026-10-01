@@ -12,6 +12,8 @@ import {
 } from "../../../server/firebase-manager-reviews";
 import {findAppUserByFirebaseUid, recordAdminAccessAudit} from "../../../server/postgres";
 import {requireManagerReviewOutboxHmacKey} from "../../../server/manager-review-outbox";
+import {getFirebaseManagerListFirestore} from "../../../server/firebase-manager-list-reader";
+import {createManagerListDependencies} from "../../../server/manager-list-dependencies";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +41,11 @@ export async function GET(request: Request) {
   const result = await handleListManagerReviews(
     request.headers.get("authorization"),
     request.headers.get("x-firebase-appcheck"),
-    dependencies(),
+    createManagerListDependencies(
+      dependencies(),
+      process.env,
+      () => listManagerReviews(getFirebaseManagerListFirestore()),
+    ),
   );
   return NextResponse.json(result.body, {status: result.status, headers: {"Cache-Control": "no-store"}});
 }
