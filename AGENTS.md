@@ -25,7 +25,7 @@
 - Vercel Preview가 Next.js 관리자 웹과 서버 route의 기본 검증 경로다.
 - Vercel Functions는 Supabase Tokyo와 같은 `hnd1`에서 실행한다.
 - Vite rollback은 CI에서 `build:vite` 산출물 생성까지만 확인하고 별도 Hosting 배포 경로를 두지 않는다.
-- Production Firebase Auth 설정·계정 등록과 운영 DB·업무 활성화는 구분한다. 운영 DB 재개·역할 부여·실제 쓰기 활성화는 원 저장소 이슈 #134와 환경 문서의 게이트를 따르며, 문서 수정만으로 실행하지 않는다.
+- 운영 DB 연결·최초 관리자 TOTP 로그인은 확인됐지만 운영 업무 활성화·전체 MFA/App Check 강제와는 구분한다. 추가 역할 부여·실제 쓰기·보안 모드 변경은 원 저장소 이슈 #134와 환경 문서의 게이트를 따르며, 문서 수정만으로 실행하지 않는다.
 - Firestore Rules, Storage Rules, Functions는 원 저장소 `bodeul110/bodeul-platform`이 계속 소유한다.
 - `ADMIN_DATABASE_URL`과 Firebase 서버 설정은 Next.js 서버에서만 읽고 브라우저 환경변수로 노출하지 않는다.
 - 관리자 서버는 Spring Core API나 기존 Node API를 경유하지 않는다. 관리자 전용 DB role로 PostgreSQL을 조회하고, 쓰기는 허용된 배정·결제·감사 함수만 사용한다. 일반 테이블 직접 쓰기 권한을 추가하지 않는다.
