@@ -1,7 +1,7 @@
 import "server-only";
 
 import {createHash} from "node:crypto";
-import {FieldValue, getFirestore, Timestamp, type DocumentData} from "firebase-admin/firestore";
+import {FieldValue, getFirestore, Timestamp, type DocumentData, type Firestore} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
 
 import {getFirebaseAdminApp} from "./firebase-admin";
@@ -38,9 +38,14 @@ import {
   type PendingAuditOutboxItem,
 } from "./manager-review-outbox";
 
-export async function listManagerReviews(): Promise<readonly AdminManagerReviewItem[]> {
-  assertManagerReviewCredentials(process.env);
-  const snapshot = await getFirestore(getFirebaseAdminApp())
+export async function listManagerReviews(
+  firestore?: Firestore,
+): Promise<readonly AdminManagerReviewItem[]> {
+  if (!firestore) {
+    assertManagerReviewCredentials(process.env);
+    firestore = getFirestore(getFirebaseAdminApp());
+  }
+  const snapshot = await firestore
     .collection("users")
     .where("role", "==", "MANAGER")
     .get();
