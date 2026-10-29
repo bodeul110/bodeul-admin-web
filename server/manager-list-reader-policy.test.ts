@@ -1,103 +1,89 @@
 import assert from "node:assert/strict";
-import {generateKeyPairSync} from "node:crypto";
 import test from "node:test";
-import {cert, deleteApp, initializeApp} from "firebase-admin/app";
-import {getFirestore} from "firebase-admin/firestore";
+import {Firestore} from "firebase-admin/firestore";
+import {ExternalAccountClient, GoogleAuth} from "google-auth-library";
 import {
-  requireManagerListReaderCredential,
+  createManagerListOidcOptions,
+  requireManagerListOidcConfiguration,
   resolveManagerListAuthMode,
   type ManagerListEnvironment,
 } from "./manager-list-reader-policy.ts";
 
-const SYNTHETIC_KEY = "-----BEGIN PRIVATE KEY-----\nsynthetic-not-a-real-key\n-----END PRIVATE KEY-----";
-const syntheticCredential = {
-  type: "service_account",
-  project_id: "bodeul-dev",
-  client_email: "admin-manager-list-dev@bodeul-dev.iam.gserviceaccount.com",
-  private_key: SYNTHETIC_KEY,
-};
 const syntheticEnv: ManagerListEnvironment = {
-  MANAGER_LIST_AUTH_MODE: "json-reader",
-  VERCEL: "1",
-  VERCEL_ENV: "preview",
-  VERCEL_GIT_COMMIT_REF: "dev",
-  FIREBASE_PROJECT_ID: "bodeul-dev",
-  FIREBASE_MANAGER_LIST_SERVICE_ACCOUNT_JSON: JSON.stringify(syntheticCredential),
+  MANAGER_LIST_AUTH_MODE: "vercel-oidc", VERCEL: "1", VERCEL_ENV: "preview",
+  VERCEL_GIT_COMMIT_REF: "dev", FIREBASE_PROJECT_ID: "bodeul-dev",
 };
 
-test("목록 인증은 기본 legacy이며 명시하지 않은 모드는 거부한다", () => {
+test("기본 legacy를 유지하고 폐기한 JSON reader와 알 수 없는 모드는 거부한다", () => {
   assert.equal(resolveManagerListAuthMode({}), "legacy");
   assert.equal(resolveManagerListAuthMode({MANAGER_LIST_AUTH_MODE: " legacy "}), "legacy");
-  assert.equal(resolveManagerListAuthMode(syntheticEnv), "json-reader");
-  assert.throws(() => resolveManagerListAuthMode({MANAGER_LIST_AUTH_MODE: "reader-typo"}));
+  assert.equal(resolveManagerListAuthMode(syntheticEnv), "vercel-oidc");
+  for (const mode of ["json-reader", "reader-typo"]) {
+    assert.throws(() => resolveManagerListAuthMode({MANAGER_LIST_AUTH_MODE: mode}));
+  }
 });
 
-test("전용 JSON reader는 정확한 DEV Preview와 dev 브랜치·프로젝트에서만 허용한다", () => {
+test("전용 OIDC reader는 DEV Preview/dev 브랜치에서만 허용한다", () => {
   for (const changes of [
     {MANAGER_LIST_AUTH_MODE: "legacy"}, {VERCEL: undefined}, {VERCEL: "0"},
     {VERCEL_ENV: "production"}, {VERCEL_ENV: "development"},
     {VERCEL_GIT_COMMIT_REF: undefined}, {VERCEL_GIT_COMMIT_REF: "feature/example"},
     {FIREBASE_PROJECT_ID: undefined}, {FIREBASE_PROJECT_ID: "bodeul-prod-110"},
   ]) {
-    assert.throws(() => requireManagerListReaderCredential({...syntheticEnv, ...changes}));
+    assert.throws(() => requireManagerListOidcConfiguration({...syntheticEnv, ...changes}));
   }
-  const credential = requireManagerListReaderCredential(syntheticEnv);
-  assert.equal(credential.projectId, "bodeul-dev");
-  assert.equal(credential.clientEmail, syntheticCredential.client_email);
+  const config = requireManagerListOidcConfiguration(syntheticEnv);
+  assert.equal(config.projectId, "bodeul-dev");
+  assert.equal(config.serviceAccountEmail, "admin-manager-list-dev@bodeul-dev.iam.gserviceaccount.com");
 });
 
-test("누락·깨진 JSON·다른 프로젝트/계정·키 형식은 비밀 없는 오류로 거부한다", () => {
-  const sentinel = "synthetic-secret-must-not-appear";
-  const invalidJsonValues: (string | undefined)[] = [
-    undefined, "", `${sentinel}{`, "null", "[]", JSON.stringify(sentinel),
-    JSON.stringify({...syntheticCredential, type: "authorized_user"}),
-    JSON.stringify({...syntheticCredential, project_id: "bodeul-prod-110"}),
-    JSON.stringify({...syntheticCredential, client_email: "another@bodeul-dev.iam.gserviceaccount.com"}),
-    JSON.stringify({...syntheticCredential, private_key: sentinel}),
-    JSON.stringify({...syntheticCredential, private_key: null}),
-  ];
-  for (const value of invalidJsonValues) {
-    assert.throws(() => requireManagerListReaderCredential({
-      ...syntheticEnv, FIREBASE_MANAGER_LIST_SERVICE_ACCOUNT_JSON: value,
-    }), (error: unknown) => error instanceof Error
-      && !error.message.includes(sentinel) && error.cause === undefined);
-  }
+test("토큰 교환·대상 계정·범위는 고정하고 JSON 키와 임의 URL은 사용하지 않는다", () => {
+  const options = createManagerListOidcOptions({...syntheticEnv,
+    FIREBASE_SERVICE_ACCOUNT_JSON: "private-sentinel",
+    GOOGLE_APPLICATION_CREDENTIALS: "untrusted.json",
+  }, async () => "synthetic-assertion");
+  assert.equal(options.type, "external_account");
+  assert.equal(options.audience, "//iam.googleapis.com/projects/533563500316/locations/global/workloadIdentityPools/vercel-admin-preview/providers/vercel");
+  assert.equal(options.token_url, "https://sts.googleapis.com/v1/token");
+  assert.equal(options.service_account_impersonation_url,
+    "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/admin-manager-list-dev@bodeul-dev.iam.gserviceaccount.com:generateAccessToken");
+  assert.deepEqual(options.scopes, ["https://www.googleapis.com/auth/datastore"]);
+  assert.deepEqual(options.service_account_impersonation, {token_lifetime_seconds: 600});
+  assert.equal(options.credential_source, undefined);
+  assert.doesNotMatch(JSON.stringify(options), /private-sentinel|untrusted.json/u);
 });
 
-test("JSON의 줄바꿈과 기존 이스케이프 줄바꿈을 native cert 입력으로 정규화한다", () => {
-  const credential = requireManagerListReaderCredential({
-    ...syntheticEnv,
-    FIREBASE_MANAGER_LIST_SERVICE_ACCOUNT_JSON: JSON.stringify({
-      ...syntheticCredential, private_key: SYNTHETIC_KEY.replace(/\n/gu, "\\n"),
-    }),
+test("OIDC supplier는 현재 token을 매번 읽으며 실패 시 다른 신원으로 재시도하지 않는다", async () => {
+  let calls = 0;
+  const options = createManagerListOidcOptions(syntheticEnv, async (...args: unknown[]) => {
+    // Google 교환 audience를 Vercel의 사용자 지정 audience로 전달하면 안 된다.
+    assert.deepEqual(args, []);
+    return `synthetic-${++calls}`;
   });
-  assert.equal(credential.privateKey, SYNTHETIC_KEY);
+  const supplier = options.subject_token_supplier!;
+  const context = {audience: options.audience, subjectTokenType: options.subject_token_type,
+    transporter: ExternalAccountClient.fromJSON(options)!.transporter};
+  assert.equal(await supplier.getSubjectToken(context), "synthetic-1");
+  assert.equal(await supplier.getSubjectToken(context), "synthetic-2");
+  const failed = createManagerListOidcOptions(syntheticEnv, async () => {throw new Error("synthetic failure");});
+  await assert.rejects(() => failed.subject_token_supplier!.getSubjectToken(context), /synthetic failure/u);
 });
 
-test("현재 SDK의 native cert는 별도 App의 기본 DB client를 외부 요청 없이 구성한다", async () => {
-  // Google 서비스 계정 키를 생성하지 않는다. 로컬 메모리 RSA fixture만 사용한다.
-  const {privateKey} = generateKeyPairSync("rsa", {
-    modulusLength: 2048,
-    privateKeyEncoding: {type: "pkcs8", format: "pem"},
-    publicKeyEncoding: {type: "spki", format: "pem"},
-  });
-  const credential = requireManagerListReaderCredential({
-    ...syntheticEnv,
-    FIREBASE_MANAGER_LIST_SERVICE_ACCOUNT_JSON: JSON.stringify({...syntheticCredential, private_key: privateKey}),
-  });
-  const legacy = initializeApp({projectId: "synthetic-legacy"}, "synthetic-list-legacy");
-  const reader = initializeApp({projectId: credential.projectId, credential: cert(credential)}, "synthetic-json-reader");
-  const firestore = getFirestore(reader);
+test("현재 공식 SDK로 외부 계정과 별도 Firestore client를 클라우드 요청 없이 구성한다", async () => {
+  let calls = 0;
+  const client = ExternalAccountClient.fromJSON(createManagerListOidcOptions(syntheticEnv, async () => {
+    calls += 1;
+    throw new Error("구성 검증에서 token을 요청하면 안 됩니다.");
+  }));
+  assert.ok(client);
+  const auth = new GoogleAuth({projectId: "bodeul-dev", authClient: client});
+  assert.equal(await auth.getClient(), client);
+  const firestore = new Firestore({projectId: "bodeul-dev", databaseId: "(default)", preferRest: true, auth});
   try {
-    assert.equal(reader.options.projectId, "bodeul-dev");
-    assert.equal(firestore, getFirestore(reader));
+    assert.equal(firestore.databaseId, "(default)");
     assert.equal(firestore.doc("users/synthetic-manager").path, "users/synthetic-manager");
-    assert.equal(legacy.options.projectId, "synthetic-legacy");
-    assert.notEqual(reader, legacy);
-    // getAccessToken·문서 조회·Storage·write는 호출하지 않는다.
+    assert.equal(calls, 0);
   } finally {
     await firestore.terminate();
-    await deleteApp(reader);
-    await deleteApp(legacy);
   }
 });

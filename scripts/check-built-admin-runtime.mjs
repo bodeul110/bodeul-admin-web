@@ -42,6 +42,9 @@ try {
     {method: "GET", path: "/admin/hospital-guides"},
     {method: "GET", path: paymentPath},
     {method: "PATCH", path: paymentPath},
+    {method: "GET", path: "/admin/manager-reviews"},
+    {method: "POST", path: "/admin/manager-reviews"},
+    {method: "POST", path: "/admin/manager-reviews/synthetic-manager/documents/license"},
   ];
   const identities = [
     {label: "무인증", header: null, error: "missing_authorization", message: "Authorization 헤더가 필요합니다."},
@@ -56,10 +59,11 @@ try {
       assertRunning();
       const label = `${route.method} ${route.path} (${identity.label})`;
       const headers = identity.header ? {authorization: identity.header} : {};
-      if (route.method === "PATCH") headers["content-type"] = "application/json";
+      const hasBody = route.method === "PATCH" || route.method === "POST";
+      if (hasBody) headers["content-type"] = "application/json";
       const response = await fetch(`http://127.0.0.1:${port}${route.path}`, {
         method: route.method, headers, redirect: "error",
-        body: route.method === "PATCH" ? "{}" : undefined,
+        body: hasBody ? "{}" : undefined,
         signal: AbortSignal.any([deadline.signal, AbortSignal.timeout(10_000)]),
       });
       const body = await response.text();
@@ -79,7 +83,7 @@ try {
       process.stdout.write(`통과: ${label}\n`);
     }
   }
-  process.stdout.write("빌드된 관리자 서버의 인증 경계 9건 통과. 계정·DB 연결 및 정상 App Check token 검증은 수행하지 않았습니다.\n");
+  process.stdout.write(`빌드된 관리자 서버의 인증 경계 ${routes.length * identities.length}건 통과. 계정·DB 연결 및 정상 App Check token 검증은 수행하지 않았습니다.\n`);
 } catch (error) {
   process.exitCode = 1;
   process.stderr.write(`관리자 런타임 검증 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}\n`);

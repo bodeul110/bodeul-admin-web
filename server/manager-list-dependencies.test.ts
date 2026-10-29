@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {handleListManagerReviews, type AdminManagerReviewDependencies} from "./admin-manager-reviews.ts";
 import {createManagerListDependencies} from "./manager-list-dependencies.ts";
-import {requireManagerListReaderCredential} from "./manager-list-reader-policy.ts";
+import {requireManagerListOidcConfiguration} from "./manager-list-reader-policy.ts";
 
 function syntheticDependencies(overrides: Partial<AdminManagerReviewDependencies> = {}) {
   const events: string[] = [];
@@ -29,7 +29,7 @@ function syntheticDependencies(overrides: Partial<AdminManagerReviewDependencies
 
 test("전용 reader GET은 목록·필수 PG 감사를 유지하며 outbox·HMAC·서류·쓰기를 호출하지 않는다", async () => {
   const {dependencies, events} = syntheticDependencies();
-  const selected = createManagerListDependencies(dependencies, {MANAGER_LIST_AUTH_MODE: "json-reader"}, async () => {
+  const selected = createManagerListDependencies(dependencies, {MANAGER_LIST_AUTH_MODE: "vercel-oidc"}, async () => {
     events.push("reader-list");
     return [{id: "synthetic-manager", name: "합*", maskedEmail: "sy***@example.invalid", maskedPhone: "-",
       createdAt: "", status: "PENDING", documentSummary: "", reviewNote: "",
@@ -55,12 +55,12 @@ test("기본·명시적 legacy GET은 기존 목록과 outbox 경로를 유지�
   }
 });
 
-test("누락된 전용 credential은 legacy로 재시도하거나 빈 목록을 반환하지 않고 FAILED 감사와 503을 유지한다", async () => {
+test("잘못된 전용 설정은 legacy로 재시도하거나 빈 목록을 반환하지 않고 FAILED 감사와 503을 유지한다", async () => {
   const {dependencies, events} = syntheticDependencies();
-  const env = {MANAGER_LIST_AUTH_MODE: "json-reader", VERCEL: "1", VERCEL_ENV: "preview",
-    VERCEL_GIT_COMMIT_REF: "dev", FIREBASE_PROJECT_ID: "bodeul-dev"};
+  const env = {MANAGER_LIST_AUTH_MODE: "vercel-oidc", VERCEL: "1", VERCEL_ENV: "preview",
+    VERCEL_GIT_COMMIT_REF: "master", FIREBASE_PROJECT_ID: "bodeul-dev"};
   const selected = createManagerListDependencies(dependencies, env, async () => {
-    events.push("reader-list"); requireManagerListReaderCredential(env); return [];
+    events.push("reader-list"); requireManagerListOidcConfiguration(env); return [];
   });
   const result = await handleListManagerReviews("Bearer synthetic-token", null, selected);
   assert.equal(result.status, 503);
@@ -88,7 +88,7 @@ test("reader 또는 필수 PG 감사 실패는 비밀 없는 503으로 종료한
       if (failAudit) throw new Error(secretSentinel);
       return "synthetic-audit-id";
     }});
-    const selected = createManagerListDependencies(dependencies, {MANAGER_LIST_AUTH_MODE: "json-reader"}, async () => {
+    const selected = createManagerListDependencies(dependencies, {MANAGER_LIST_AUTH_MODE: "vercel-oidc"}, async () => {
       events.push("reader-list");
       if (!failAudit) throw new Error(secretSentinel);
       return [];
@@ -134,7 +134,7 @@ test("역할 거부의 필수 PG 감사 실패도 reader를 호출하지 않고 
     async recordAdminAccessAudit() {throw new Error("합성 감사 실패");},
   });
   let calls = 0;
-  const selected = createManagerListDependencies(dependencies, {MANAGER_LIST_AUTH_MODE: "json-reader"}, async () => {
+  const selected = createManagerListDependencies(dependencies, {MANAGER_LIST_AUTH_MODE: "vercel-oidc"}, async () => {
     calls += 1; return [];
   });
   const result = await handleListManagerReviews("Bearer synthetic-token", null, selected);

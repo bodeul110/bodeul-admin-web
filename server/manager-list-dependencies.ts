@@ -9,9 +9,9 @@ export function createManagerListDependencies(
   return {
     ...dependencies,
     // 인증·역할 검사 뒤에만 모드 선택과 credential 초기화를 실행한다.
-    listManagerReviews: () => resolveManagerListAuthMode(env) === "json-reader"
+    listManagerReviews: () => resolveManagerListAuthMode(env) === "vercel-oidc"
       ? readWithDedicatedCredential() : dependencies.listManagerReviews(),
-    reconcilePendingManagerReviewAudits: () => resolveManagerListAuthMode(env) === "json-reader"
+    reconcilePendingManagerReviewAudits: () => resolveManagerListAuthMode(env) === "vercel-oidc"
       // 읽기 전용 GET에서 보정·삭제를 보류하며 기존 큐 항목을 변경하지 않는다.
       ? Promise.resolve(0) : dependencies.reconcilePendingManagerReviewAudits(),
   };
