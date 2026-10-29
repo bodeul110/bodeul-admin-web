@@ -34,6 +34,7 @@ flowchart LR
 - Firebase Storage 원본을 서버에서 검증·정제한 워터마크 보호 미리보기
 - 매니저 서류 승인·반려
 - PostgreSQL 예약 공개 코드 정확 검색
+- 예약 검색 결과에서 매니저 이름·이메일 검색, 선택·확인 후 배정
 - 병원 가이드 PostgreSQL read API 조회
 - 목록 기본 마스킹과 15분 유휴 세션 종료
 
@@ -54,14 +55,18 @@ flowchart LR
 | --- | --- | --- | --- |
 | `GET` | `/admin/hospital-guides?limit=50` | Firebase ID token + App Check + PostgreSQL `ADMIN` | 병원 가이드 목록 조회 |
 | `POST` | `/admin/appointments/public-code` | Firebase ID token + App Check + PostgreSQL `ADMIN` | JSON 본문의 `publicCode`를 정확 검색하며 감사·요청 제한 적용 |
+| `GET` | `/admin/companion-assignments/managers?q=...` | Firebase ID token + App Check + `SUPER_ADMIN`/`OPERATIONS` | 이름·이메일로 배정 후보 검색, 최대 50명과 추가 결과 여부 반환 |
+| `POST` | `/admin/companion-assignments` | Firebase ID token + App Check + `SUPER_ADMIN`/`OPERATIONS` | 예약 버전·상태를 확인한 뒤 허용된 DB 함수로 매니저 배정 |
 | `GET/POST` | `/admin/manager-reviews` | Firebase ID token + App Check + `SUPER_ADMIN`/`OPERATIONS` | 목록 조회와 증거 기반 승인·반려 |
 | `POST` | `/admin/manager-reviews/{id}/documents/{key}` | Firebase ID token + App Check + `SUPER_ADMIN`/`OPERATIONS` | 확인 사유를 감사한 뒤 워터마크 파생본과 단기 증거 token 발급 |
 
 모든 관리자 API는 PostgreSQL `ADMIN` 진입 자격과 활성 세부 역할을 함께 확인합니다. 표는 주요 API 요약이며 세부 역할별 계약은 [관리자 역할과 서버 route](docs/nextjs-admin-server.md#관리자-역할과-서버-route)를 따릅니다.
 
-`limit`은 1부터 100 사이의 정수만 허용합니다. 응답은 캐시하지 않으며 DB 장애는 `503`, 관리자 권한 부족은 `403`, 잘못된 token은 `401`로 구분합니다.
+병원 가이드의 `limit`은 1부터 100 사이의 정수만 허용합니다. 응답은 캐시하지 않으며 DB 장애는 `503`, 관리자 권한 부족은 `403`, 잘못된 token은 `401`로 구분합니다.
 
 예약 코드 검색은 부분 검색을 제공하지 않습니다. DB 함수가 관리자별 정상 검색을 분당 10회로 제한하고 코드 평문 대신 SHA-256 해시와 결과만 감사 기록에 남깁니다.
+
+매니저 배정은 검색한 예약의 버전을 사용하며, 충돌·응답 유실 때 자동 재시도하지 않습니다. 후보 기준과 개발 환경 시연 순서는 [관리자 웹 매니저 배정](docs/admin-manager-assignment.md)을 확인합니다.
 
 ## 환경 설정
 
