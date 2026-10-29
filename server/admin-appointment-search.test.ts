@@ -18,6 +18,8 @@ const ITEM = {
   guardianName: "보호자 사용자",
   managerUserId: "04e9b7fd-9727-4f81-af7b-ab3534339fd0",
   managerName: "매니저 사용자",
+  version: 1,
+  paymentMethod: "CARD",
 } as const;
 
 const dependencies: AdminAppointmentSearchDependencies = {

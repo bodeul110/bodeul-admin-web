@@ -15,6 +15,8 @@ export type AppointmentPublicCodeSearchItem = {
   readonly guardianName: string;
   readonly managerUserId: string;
   readonly managerName: string;
+  readonly version: number;
+  readonly paymentMethod: string;
 };
 
 export type AppointmentPublicCodeLookup =

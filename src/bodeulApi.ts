@@ -4,6 +4,7 @@ import {createAdminApiHeaders} from "./adminApiHeaders";
 import {getFirebaseAppCheckToken} from "./appCheck";
 import {clientEnv} from "./clientEnv";
 import {parseAdminPayment, type AdminPaymentPayload, type PaymentCommand} from "./adminPayment";
+import {appointmentVersion, parseAssignmentManagers} from "./adminAssignment";
 
 export type BodeulDataBackend = "firebase" | "api";
 
@@ -32,6 +33,8 @@ export type AppointmentPublicCodeSearchItem = {
   readonly guardianName: string;
   readonly managerUserId: string;
   readonly managerName: string;
+  readonly version: number;
+  readonly paymentMethod: string;
 };
 
 export type AdminDetailRole = "SUPER_ADMIN" | "OPERATIONS" | "DEVELOPER";
@@ -195,7 +198,26 @@ export async function fetchAppointmentByPublicCode(
     guardianName: readOptionalString(item.guardianName),
     managerUserId: readOptionalString(item.managerUserId),
     managerName: readOptionalString(item.managerName),
+    version: appointmentVersion(item.version),
+    paymentMethod: readRequiredAppointmentString(item.paymentMethod, "paymentMethod"),
   };
+}
+
+export async function fetchAssignmentManagers(user: FirebaseUser, query: string, baseUrl: string, signal?: AbortSignal) {
+  return parseAssignmentManagers(await authenticatedAdminJson(user,
+    `/admin/companion-assignments/managers?q=${encodeURIComponent(query)}`, {method: "GET", signal}, baseUrl));
+}
+
+export async function assignAdminManager(user: FirebaseUser, command: {
+  appointmentRequestId: string; managerUserId: string; expectedAppointmentVersion: number; reason: string;
+}, baseUrl: string): Promise<string> {
+  const payload = await authenticatedAdminJson(user, "/admin/companion-assignments", {
+    method: "POST", body: JSON.stringify(command), signal: AbortSignal.timeout(30_000),
+  }, baseUrl);
+  if (!isRecord(payload) || typeof payload.sessionId !== "string" || !payload.sessionId) {
+    throw new BodeulApiError("invalid_assignment_result", "배정 결과를 확인하지 못했습니다. 예약을 다시 조회해 주세요.");
+  }
+  return payload.sessionId;
 }
 
 export async function fetchAdminAccessContext(

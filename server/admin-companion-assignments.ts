@@ -121,7 +121,7 @@ function mapAssignmentFailure(error: unknown): AdminCompanionAssignmentResult {
     case "40001":
       return failure(409, "appointment_version_conflict", "예약이 변경되었습니다. 다시 조회해 주세요.");
     case "P0001":
-      return failure(409, "appointment_state_conflict", "요청 상태의 예약만 매칭할 수 있습니다.");
+      return failure(409, "appointment_state_conflict", "예약 상태 또는 입금 확인 상태가 배정 조건에 맞지 않습니다. 다시 조회해 주세요.");
     default:
       return failure(503, "companion_assignment_failed", "매니저 배정에 실패했습니다.");
   }

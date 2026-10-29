@@ -2,6 +2,8 @@ import {useState} from "react";
 import type {FormEvent} from "react";
 import type {User as FirebaseUser} from "firebase/auth";
 import {AdminPaymentPanel} from "./AdminPaymentPanel";
+import {AdminCompanionAssignmentPanel} from "./AdminCompanionAssignmentPanel";
+import {assignedManagerLabel} from "../adminAssignment";
 
 import {
   BodeulApiError,
@@ -25,11 +27,13 @@ export function AppointmentPublicCodeSearchPanel({
   const [item, setItem] = useState<AppointmentPublicCodeSearchItem | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  const [searchRevision, setSearchRevision] = useState(0);
   const isApiMode = dataBackend === "api";
 
   async function search(event: FormEvent) {
     event.preventDefault();
-    if (!currentUser || !isApiMode || isLoading) {
+    if (!currentUser || !isApiMode || isLoading || assigning) {
       return;
     }
 
@@ -41,6 +45,7 @@ export function AppointmentPublicCodeSearchPanel({
     }
 
     setIsLoading(true);
+    setSearchRevision((value) => value + 1);
     setItem(null);
     setMessage("");
     try {
@@ -65,6 +70,7 @@ export function AppointmentPublicCodeSearchPanel({
         <label className="flex-1">
           <span className="mb-1 block text-xs font-medium text-gray-700">예약 코드</span>
           <input
+            disabled={isLoading || assigning}
             value={publicCode}
             onChange={(event) => setPublicCode(event.target.value.toUpperCase())}
             placeholder="BD-ABC123"
@@ -75,7 +81,7 @@ export function AppointmentPublicCodeSearchPanel({
         </label>
         <button
           type="submit"
-          disabled={!currentUser || !isApiMode || isLoading}
+          disabled={!currentUser || !isApiMode || isLoading || assigning}
           className="mt-6 h-10 rounded-md bg-blue-600 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLoading ? "검색 중" : "검색"}
@@ -109,12 +115,19 @@ export function AppointmentPublicCodeSearchPanel({
             <ResultField label="예약 일시" value={formatDateTime(item.appointmentAt)} />
             <ResultField label="환자" value={item.patientName || "-"} />
             <ResultField label="보호자" value={item.guardianName || "-"} />
-            <ResultField label="배정 매니저" value={item.managerName || "미배정"} />
+            <ResultField label="배정 매니저" value={assignedManagerLabel(item)} />
             <ResultField label="내부 예약 ID" value={item.id} breakAll />
           </dl>
         </section>
       )}
       {item && currentUser && isApiMode && (
+        <AdminCompanionAssignmentPanel key={`${currentUser.uid}:${item.id}:${apiBaseUrl}:${searchRevision}`}
+          currentUser={currentUser} item={item} apiBaseUrl={apiBaseUrl} onBusyChange={setAssigning}
+          onAssigned={async () => {
+            setItem(await fetchAppointmentByPublicCode(currentUser, item.publicCode, {baseUrl: apiBaseUrl}));
+          }} />
+      )}
+      {item && currentUser && isApiMode && item.paymentMethod === "BANK_TRANSFER" && (
         <AdminPaymentPanel key={`${currentUser.uid}:${item.id}:${apiBaseUrl}`} currentUser={currentUser}
           appointmentRequestId={item.id} apiBaseUrl={apiBaseUrl} />
       )}
