@@ -13,6 +13,7 @@ import {SUPABASE_ROOT_CA} from "./supabase-root-ca";
 import {assertAdminDatabaseBoundary} from "./deployment-boundary";
 import {parseAdminPayment, type AdminPayment, type PaymentCommand} from "../src/adminPayment";
 import {runAdminPaymentTransition} from "./admin-payment-transaction";
+import {appointmentVersion, type AssignmentManager, type AssignmentManagerPage} from "../src/adminAssignment";
 
 type HospitalGuideRow = {
   readonly id: string;
@@ -42,6 +43,8 @@ type AppointmentPublicCodeSearchRow = {
   readonly guardian_name: string | null;
   readonly manager_user_id: string | null;
   readonly manager_name: string | null;
+  readonly version?: string | number;
+  readonly payment_method?: string;
 };
 
 const globalForPostgres = globalThis as typeof globalThis & {
@@ -279,13 +282,24 @@ export async function findAppointmentByPublicCode(
     "select * from bodeul.search_appointment_by_public_code($1::uuid, $2::text)",
     [actorAdminUserId, publicCode],
   );
-  const row = result.rows[0];
-  if (!row || row.lookup_status !== "FOUND") {
+  const lookup = result.rows[0];
+  if (!lookup || lookup.lookup_status !== "FOUND") {
     return {
-      status: row?.lookup_status === "RATE_LIMITED" ? "RATE_LIMITED" : "NOT_FOUND",
+      status: lookup?.lookup_status === "RATE_LIMITED" ? "RATE_LIMITED" : "NOT_FOUND",
       item: null,
     };
   }
+
+  // 감사·횟수 제한을 통과한 예약만 읽고, 상태와 낙관적 잠금 버전을 같은 스냅샷으로 반환한다.
+  const current = await getAdminPool().query<AppointmentPublicCodeSearchRow>(
+    `select a.id as appointment_request_id, a.public_code, a.status as appointment_status,
+      a.appointment_at, a.hospital_name, a.department_name, a.patient_name, a.guardian_name,
+      a.manager_user_id, m.name as manager_name, a.version, a.payment_method_code as payment_method
+    from bodeul.appointment_requests a left join bodeul.app_users m on m.id = a.manager_user_id
+    where a.id = $1::uuid`, [lookup.appointment_request_id],
+  );
+  const row = current.rows[0];
+  if (!row) return {status: "NOT_FOUND", item: null};
 
   const item: AppointmentPublicCodeSearchItem = {
     id: requiredDatabaseText(row.appointment_request_id, "appointment_request_id"),
@@ -298,8 +312,19 @@ export async function findAppointmentByPublicCode(
     guardianName: row.guardian_name || "",
     managerUserId: row.manager_user_id || "",
     managerName: row.manager_name || "",
+    version: appointmentVersion(row.version === undefined ? undefined : Number(row.version)),
+    paymentMethod: requiredDatabaseText(row.payment_method ?? null, "payment_method"),
   };
   return {status: "FOUND", item};
+}
+
+export async function listAssignmentManagers(query: string): Promise<AssignmentManagerPage> {
+  const result = await getAdminPool().query<AssignmentManager>(
+    `select id, name, email from bodeul.app_users
+    where role = 'MANAGER' and ($1::text = '' or strpos(lower(name || ' ' || email), lower($1::text)) > 0)
+    order by name, email, id limit 51`, [query],
+  );
+  return {items: result.rows.slice(0, 50), hasMore: result.rows.length > 50};
 }
 
 export async function listHospitalGuides(limit: number): Promise<readonly HospitalGuideItem[]> {

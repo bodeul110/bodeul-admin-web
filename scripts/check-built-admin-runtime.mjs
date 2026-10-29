@@ -40,6 +40,9 @@ try {
   const paymentPath = "/admin/appointments/20000000-0000-4000-8000-000000000001/payment";
   const routes = [
     {method: "GET", path: "/admin/hospital-guides"},
+    {method: "POST", path: "/admin/appointments/public-code"},
+    {method: "GET", path: "/admin/companion-assignments/managers"},
+    {method: "POST", path: "/admin/companion-assignments"},
     {method: "GET", path: paymentPath},
     {method: "PATCH", path: paymentPath},
     {method: "GET", path: "/admin/manager-reviews"},
