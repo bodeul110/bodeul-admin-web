@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {ManagerReviewCredentialsError} from "./manager-review-credentials.ts";
 
 import {
   handleListManagerReviews,
@@ -142,6 +143,32 @@ test("감사 outbox 재처리 실패는 매니저 목록 조회를 막지 않는
 
   assert.equal(result.status, 200);
   assert.equal("items" in result.body ? result.body.items.length : 0, 1);
+});
+
+test("서버 인증 누락은 빈 목록이 아닌 구분된 오류와 실패 감사로 처리한다", async () => {
+  const outcomes: string[] = [];
+  const result = await handleListManagerReviews("Bearer token", null, {
+    ...dependencies,
+    async listManagerReviews() { throw new ManagerReviewCredentialsError(); },
+    async recordAdminAccessAudit(command) {
+      outcomes.push(command.outcome);
+      return OPERATION_ID;
+    },
+  });
+  assert.equal(result.status, 503);
+  assert.equal("error" in result.body ? result.body.error : "", "manager_reviews_credentials_unavailable");
+  assert.equal("items" in result.body, false);
+  assert.deepEqual(outcomes, ["FAILED"]);
+});
+
+test("Firestore 내부 오류와 자격 증명 문자열은 응답에 노출하지 않는다", async () => {
+  const result = await handleListManagerReviews("Bearer token", null, {
+    ...dependencies,
+    async listManagerReviews() { throw new Error("token=private-token private_key=private-key"); },
+  });
+  assert.equal(result.status, 503);
+  assert.equal("error" in result.body ? result.body.error : "", "manager_reviews_lookup_failed");
+  assert.doesNotMatch(JSON.stringify(result.body), /private-token|private-key/u);
 });
 
 test("DEVELOPER는 목록·심사·원문 조회를 모두 거부한다", async () => {

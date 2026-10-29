@@ -28,7 +28,7 @@ import {
   type AdminManagerReviewItem,
 } from "./bodeulApi";
 import { AdminAuthScreen } from "./components/AdminAuthScreen";
-import { AdminShell } from "./components/AdminShell";
+import { AdminShell, type ManagerListLoadState } from "./components/AdminShell";
 import { AppointmentPublicCodeSearchPanel } from "./components/AppointmentPublicCodeSearchPanel";
 import { AdminSecurityPanel } from "./components/AdminSecurityPanel";
 import { HospitalGuideApiPanel } from "./components/HospitalGuideApiPanel";
@@ -240,7 +240,7 @@ function retainServerMask(value: string): string {
   return value || "-";
 }
 
-function Dashboard({ managers }: { managers: Manager[] }) {
+function Dashboard({ managers, ready }: { managers: Manager[]; ready: boolean }) {
   const pendingCount = useMemo(
     () => managers.filter((manager) => manager.status === "대기").length,
     [managers],
@@ -266,15 +266,15 @@ function Dashboard({ managers }: { managers: Manager[] }) {
       <div className="grid gap-3 md:grid-cols-3">
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-gray-500">승인 대기</p>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">{pendingCount}</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">{ready ? pendingCount : "-"}</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-gray-500">검토 중</p>
-          <p className="mt-2 text-2xl font-semibold text-blue-600">{reviewingCount}</p>
+          <p className="mt-2 text-2xl font-semibold text-blue-600">{ready ? reviewingCount : "-"}</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-gray-500">승인 완료</p>
-          <p className="mt-2 text-2xl font-semibold text-green-600">{approvedCount}</p>
+          <p className="mt-2 text-2xl font-semibold text-green-600">{ready ? approvedCount : "-"}</p>
         </div>
       </div>
     </div>
@@ -593,12 +593,16 @@ function App() {
   const [adminPermissions, setAdminPermissions] = useState<readonly AdminPermission[]>([]);
   const [managerSnapshot, setManagerSnapshot] = useState<Manager[]>([]);
   const [managerLoadError, setManagerLoadError] = useState("");
+  const [managerLoadState, setManagerLoadState] = useState<ManagerListLoadState>("idle");
+  const managerLoadRequestRef = useRef(0);
   const dataBackend = useMemo(() => resolveBodeulDataBackend(), []);
   const apiBaseUrl = useMemo(() => resolveBodeulApiBaseUrl(), []);
 
   const resetAdminShellState = useCallback(() => {
+    managerLoadRequestRef.current += 1;
     setManagerSnapshot([]);
     setManagerLoadError("");
+    setManagerLoadState("idle");
     setCurrentMenu("dashboard");
   }, []);
 
@@ -695,13 +699,20 @@ function App() {
 
   const loadManagerReviews = useCallback(async () => {
     if (!currentAdminUser) return;
+    const requestId = ++managerLoadRequestRef.current;
+    setManagerLoadState("loading");
+    setManagerLoadError("");
     try {
       const items = await fetchAdminManagerReviews(currentAdminUser);
+      if (requestId !== managerLoadRequestRef.current || auth.currentUser?.uid !== currentAdminUser.uid) return;
       setManagerSnapshot(items.map(toManager));
       setManagerLoadError("");
+      setManagerLoadState("ready");
     } catch (error) {
-      console.error("Manager review list failed:", error);
+      if (requestId !== managerLoadRequestRef.current || auth.currentUser?.uid !== currentAdminUser.uid) return;
+      console.error("매니저 심사 목록 조회 실패:", error instanceof BodeulApiError ? error.code : "unknown_error");
       setManagerSnapshot([]);
+      setManagerLoadState("error");
       setManagerLoadError(error instanceof Error
         ? error.message
         : "매니저 심사 목록을 불러오지 못했습니다.");
@@ -867,13 +878,15 @@ function App() {
       canManageRoles={canManageRoles}
       currentMenu={currentMenu}
       managerLoadError={managerLoadError}
+      managerLoadState={managerLoadState}
+      onRetryManagers={() => { void loadManagerReviews(); }}
       onMenuChange={setCurrentMenu}
       onLogout={() => {
         void handleLogout();
       }}
     >
-      {currentMenu === "dashboard" && <Dashboard managers={managerSnapshot} />}
-      {currentMenu === "approval" && canReviewManagers && (
+      {currentMenu === "dashboard" && <Dashboard managers={managerSnapshot} ready={managerLoadState === "ready"} />}
+      {currentMenu === "approval" && canReviewManagers && managerLoadState === "ready" && (
         currentAdminUser && <ManagerApproval
           currentUser={currentAdminUser}
           managers={managerSnapshot}

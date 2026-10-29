@@ -1,6 +1,6 @@
 # Next.js 관리자 서버 전환 기록
 
-현재 구성 대조: 2026-09-27. 날짜가 붙은 검증 결과는 당시 이력을 유지한다. 개발은 `dev`·Preview, 운영은 `master`·Production이며 접속 주소와 남은 게이트는 [환경 기준](dev-production.md)을 따른다.
+현재 구성 대조: 2026-10-29. 날짜가 붙은 검증 결과는 당시 이력을 유지한다. 개발은 `dev`·Preview, 운영은 `master`·Production이며 접속 주소와 남은 게이트는 [환경 기준](dev-production.md)을 따른다.
 
 ## 작업 목적
 
@@ -56,6 +56,7 @@
 | `FIREBASE_PROJECT_ID` | 서버 | Firebase ID token audience 검증 |
 | `FIREBASE_STORAGE_BUCKET` | 서버 | 매니저 증빙 원본을 읽는 Storage bucket |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | 서버 | Firestore·Storage 중계 route 전용 자격 증명 |
+| `MANAGER_LIST_AUTH_MODE` | 서버 | 기본 `legacy`. `vercel-oidc`는 개발 Preview/dev의 심사 목록 GET만 전용 WIF 읽기 계정으로 연결하며 공용 credential로 우회하지 않음 |
 | `ADMIN_DATABASE_URL` | 서버 | 관리자 최소 권한 PostgreSQL 연결. 제한된 조회와 허용된 업무 함수 호출에 사용 |
 | `ADMIN_BANK_TRANSFER_WRITES_ENABLED` | 서버 | 기본 `false`. V23 적용 후 로컬 개발·Vercel Preview에서만 `true`로 결제 상태 기록을 허용하며 Production은 거부 |
 | `ADMIN_APP_CHECK_MODE` | 서버 | `off`, `observe`, `enforce` 전환 |
@@ -64,7 +65,9 @@
 | `ADMIN_MFA_ENFORCE_READY` | 서버 | 전 관리자 MFA 등록·복구 확인 뒤 강제 전환을 명시 승인 |
 | `FIREBASE_APPCHECK_ALLOWED_APP_IDS` | 서버 | 현재 배포 환경이 신뢰하는 Firebase Web App ID |
 
-Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. Firestore·Storage 중계 route의 서비스 계정 JSON은 브라우저와 저장소에 노출하지 않고 Preview와 Production을 분리한다. 매니저 심사 route는 `users` 심사 상태와 `adminAuditOutbox`를 변경하므로 Firestore 읽기·쓰기 권한이 필요하고, 증빙 원본은 Storage 객체 조회 권한만 사용한다. Admin SDK는 Rules를 우회하므로 서비스 계정에는 이 동작에 필요한 최소 IAM 권한만 부여하고 정기 회전하며, 장기 운영에서는 Vercel OIDC 기반 WIF로 교체한다.
+Firebase ID token 검증 자체는 프로젝트 ID만으로 수행한다. 개발 심사 목록 GET에는 키 없는 Vercel OIDC/WIF 전용 reader를 구현했다. 활성화·실제 조회 확인과 IAM 제한은 [전용 reader 운영 기준](manager-list-dev-reader.md)을 따른다. 이 경로는 Firestore 읽기만 수행하고 기존 outbox 재처리를 건너뛰되 PostgreSQL 조회 감사는 유지한다. 다른 route, Production과 `legacy` 모드는 이 변경으로 인증 권한을 얻지 않는다.
+
+기존 Firestore·Storage 중계 route의 서비스 계정 JSON은 브라우저와 저장소에 노출하지 않고 Preview와 Production을 분리한다. 매니저 심사 POST와 legacy 목록의 outbox 재처리는 `users` 심사 상태와 `adminAuditOutbox`를 변경하므로 별도 Firestore 쓰기 권한이 필요하고, 증빙 원본은 Storage 객체 조회 권한이 필요하다. Admin SDK는 Rules를 우회하므로 목록용 읽기 계정에 이 권한을 함께 주지 않는다. 목록 복구를 심사 승인·서류 열람 활성화로 간주하지 않는다.
 
 ## 사이트 배포 환경 표시
 

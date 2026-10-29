@@ -14,8 +14,10 @@
     "preview:vite": "vite preview"
   },
   "dependencies": {
+    "@vercel/oidc": "4.0.4",
     "firebase": "^12.19.0",
     "firebase-admin": "14.5.0",
+    "google-auth-library": "11.1.0",
     "next": "16.4.3",
     "pg": "8.23.1",
     "react": "^19.3.0",

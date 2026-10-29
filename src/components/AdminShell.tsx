@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import {AdminEnvironmentBanner} from "./AdminEnvironmentBanner";
 
 type MenuKey = "dashboard" | "approval" | "appointmentSearch" | "hospitalGuides" | "security";
+export type ManagerListLoadState = "idle" | "loading" | "ready" | "error";
 
 type AdminShellProps = {
   adminName: string;
@@ -11,6 +12,8 @@ type AdminShellProps = {
   canManageRoles: boolean;
   currentMenu: MenuKey;
   managerLoadError: string;
+  managerLoadState: ManagerListLoadState;
+  onRetryManagers: () => void;
   onMenuChange: (menu: MenuKey) => void;
   onLogout: () => void;
   children: ReactNode;
@@ -24,6 +27,8 @@ export function AdminShell({
   canManageRoles,
   currentMenu,
   managerLoadError,
+  managerLoadState,
+  onRetryManagers,
   onMenuChange,
   onLogout,
   children,
@@ -125,10 +130,19 @@ export function AdminShell({
             </button>
           </header>
 
-          {managerLoadError && (
-            <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {managerLoadError}
+          {canReviewManagers && (currentMenu === "dashboard" || currentMenu === "approval")
+            && managerLoadState === "error" && (
+            <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <p>{managerLoadError}</p>
+              <button type="button" onClick={onRetryManagers}
+                className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 font-medium hover:bg-red-50">
+                다시 불러오기
+              </button>
             </div>
+          )}
+          {canReviewManagers && (currentMenu === "dashboard" || currentMenu === "approval")
+            && (managerLoadState === "idle" || managerLoadState === "loading") && (
+            <p role="status" className="mb-4 text-xs text-gray-600">매니저 심사 목록을 불러오는 중입니다.</p>
           )}
 
           {children}
