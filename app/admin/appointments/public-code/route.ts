@@ -1,6 +1,7 @@
 import {NextResponse} from "next/server";
 
 import {handleAdminAppointmentSearch} from "../../../../server/admin-appointment-search";
+import {readAssignmentManagerProfiles} from "../../../../server/firebase-assignment-manager-profiles";
 import {
   createAdminAppCheckDependencies,
   verifyFirebaseIdToken,
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
       ...createAdminAppCheckDependencies(),
       verifyIdToken: verifyFirebaseIdToken,
       findAppUserByFirebaseUid,
-      findAppointmentByPublicCode,
+      findAppointmentByPublicCode: (actor, code) => findAppointmentByPublicCode(actor, code, readAssignmentManagerProfiles),
     },
   );
 

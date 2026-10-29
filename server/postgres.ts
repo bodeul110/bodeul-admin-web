@@ -13,7 +13,8 @@ import {SUPABASE_ROOT_CA} from "./supabase-root-ca";
 import {assertAdminDatabaseBoundary} from "./deployment-boundary";
 import {parseAdminPayment, type AdminPayment, type PaymentCommand} from "../src/adminPayment";
 import {runAdminPaymentTransition} from "./admin-payment-transaction";
-import {appointmentVersion, type AssignmentManager, type AssignmentManagerPage} from "../src/adminAssignment";
+import {appointmentVersion, type AssignmentManagerPage} from "../src/adminAssignment";
+import {buildAssignmentManagerPage, type ManagerDirectoryRecord, type ManagerDisplayProfile} from "./assignment-manager-directory";
 
 type HospitalGuideRow = {
   readonly id: string;
@@ -45,6 +46,7 @@ type AppointmentPublicCodeSearchRow = {
   readonly manager_name: string | null;
   readonly version?: string | number;
   readonly payment_method?: string;
+  readonly manager_firebase_uid?: string | null;
 };
 
 const globalForPostgres = globalThis as typeof globalThis & {
@@ -277,6 +279,7 @@ export async function assignCompanionSession(command: CompanionAssignmentCommand
 export async function findAppointmentByPublicCode(
   actorAdminUserId: string,
   publicCode: string,
+  readProfiles?: (uids: readonly string[]) => Promise<ReadonlyMap<string, ManagerDisplayProfile>>,
 ): Promise<AppointmentPublicCodeLookup> {
   const result = await getAdminPool().query<AppointmentPublicCodeSearchRow>(
     "select * from bodeul.search_appointment_by_public_code($1::uuid, $2::text)",
@@ -294,12 +297,18 @@ export async function findAppointmentByPublicCode(
   const current = await getAdminPool().query<AppointmentPublicCodeSearchRow>(
     `select a.id as appointment_request_id, a.public_code, a.status as appointment_status,
       a.appointment_at, a.hospital_name, a.department_name, a.patient_name, a.guardian_name,
-      a.manager_user_id, m.name as manager_name, a.version, a.payment_method_code as payment_method
+      a.manager_user_id, m.name as manager_name, m.firebase_uid as manager_firebase_uid,
+      a.version, a.payment_method_code as payment_method
     from bodeul.appointment_requests a left join bodeul.app_users m on m.id = a.manager_user_id
     where a.id = $1::uuid`, [lookup.appointment_request_id],
   );
   const row = current.rows[0];
   if (!row) return {status: "NOT_FOUND", item: null};
+  let managerName = row.manager_name || "";
+  if (!managerName && row.manager_firebase_uid && readProfiles) {
+    try { managerName = (await readProfiles([row.manager_firebase_uid])).get(row.manager_firebase_uid)?.name || ""; }
+    catch { /* 표시 이름 조회 장애가 예약의 확정 상태 조회를 막지는 않는다. */ }
+  }
 
   const item: AppointmentPublicCodeSearchItem = {
     id: requiredDatabaseText(row.appointment_request_id, "appointment_request_id"),
@@ -311,20 +320,21 @@ export async function findAppointmentByPublicCode(
     patientName: row.patient_name || "",
     guardianName: row.guardian_name || "",
     managerUserId: row.manager_user_id || "",
-    managerName: row.manager_name || "",
+    managerName,
     version: appointmentVersion(row.version === undefined ? undefined : Number(row.version)),
     paymentMethod: requiredDatabaseText(row.payment_method ?? null, "payment_method"),
   };
   return {status: "FOUND", item};
 }
 
-export async function listAssignmentManagers(query: string): Promise<AssignmentManagerPage> {
-  const result = await getAdminPool().query<AssignmentManager>(
-    `select id, name, email from bodeul.app_users
-    where role = 'MANAGER' and ($1::text = '' or strpos(lower(name || ' ' || email), lower($1::text)) > 0)
-    order by name, email, id limit 51`, [query],
+export async function listAssignmentManagers(query: string, readProfiles:
+  (uids: readonly string[]) => Promise<ReadonlyMap<string, ManagerDisplayProfile>>,
+): Promise<AssignmentManagerPage> {
+  const result = await getAdminPool().query<ManagerDirectoryRecord>(
+    `select id, name, email, firebase_uid as "firebaseUid" from bodeul.app_users
+    where role = 'MANAGER' order by id limit 1001`,
   );
-  return {items: result.rows.slice(0, 50), hasMore: result.rows.length > 50};
+  return buildAssignmentManagerPage(result.rows, query, readProfiles);
 }
 
 export async function listHospitalGuides(limit: number): Promise<readonly HospitalGuideItem[]> {

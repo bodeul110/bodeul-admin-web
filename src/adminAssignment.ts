@@ -16,7 +16,7 @@ export function assignmentManagerLabel(manager: AssignmentManager): string {
 }
 
 export function assignedManagerLabel(item: {managerUserId: string; managerName: string}): string {
-  return item.managerUserId ? item.managerName || `이름 미등록 · ${item.managerUserId}` : "미배정";
+  return item.managerUserId ? item.managerName || `이름 확인 필요 · ${item.managerUserId}` : "미배정";
 }
 
 export function parseAssignmentManagers(value: unknown): AssignmentManagerPage {
