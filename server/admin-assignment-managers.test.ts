@@ -69,6 +69,6 @@ test("미배정 요청 상태와 안전한 버전만 신규 배정할 수 있다
 
 test("이름이 없어도 배정된 매니저를 미배정으로 표시하지 않는다", () => {
   assert.equal(assignedManagerLabel({managerUserId: "", managerName: ""}), "미배정");
-  assert.match(assignedManagerLabel({managerUserId: manager.id, managerName: ""}), /이름 미등록/u);
+  assert.match(assignedManagerLabel({managerUserId: manager.id, managerName: ""}), /이름 확인 필요/u);
   assert.equal(assignmentManagerLabel({...manager, name: ""}), manager.email);
 });

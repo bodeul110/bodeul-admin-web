@@ -2,7 +2,7 @@ import {authorizeAdmin, requireAdminRole, type AdminAuthorizationDependencies} f
 import type {AssignmentManagerPage} from "../src/adminAssignment.ts";
 
 export type AssignmentManagerDependencies = AdminAuthorizationDependencies & {
-  readonly listAssignmentManagers: (query: string) => Promise<AssignmentManagerPage>;
+  readonly listAssignmentManagers: (query: string, actorAdminUserId: string) => Promise<AssignmentManagerPage>;
 };
 
 export async function handleAssignmentManagers(
@@ -18,7 +18,7 @@ export async function handleAssignmentManagers(
     return {status: 400, body: {error: "invalid_manager_query", message: "검색어는 100자 이하여야 합니다."}};
   }
   try {
-    return {status: 200, body: await dependencies.listAssignmentManagers(normalized)};
+    return {status: 200, body: await dependencies.listAssignmentManagers(normalized, authorization.actor.id)};
   } catch {
     return {status: 503, body: {error: "manager_lookup_failed", message: "매니저 목록을 불러오지 못했습니다."}};
   }
