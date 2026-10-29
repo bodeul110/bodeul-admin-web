@@ -5,6 +5,7 @@ import {FieldValue, getFirestore, Timestamp, type DocumentData} from "firebase-a
 import {getStorage} from "firebase-admin/storage";
 
 import {getFirebaseAdminApp} from "./firebase-admin";
+import {assertManagerReviewCredentials} from "./manager-review-credentials";
 import type {
   AdminManagerDocument,
   AdminManagerReviewItem,
@@ -38,6 +39,7 @@ import {
 } from "./manager-review-outbox";
 
 export async function listManagerReviews(): Promise<readonly AdminManagerReviewItem[]> {
+  assertManagerReviewCredentials(process.env);
   const snapshot = await getFirestore(getFirebaseAdminApp())
     .collection("users")
     .where("role", "==", "MANAGER")
