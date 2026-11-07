@@ -7,6 +7,7 @@ import {
 } from "./admin-auth.ts";
 import type {AdminAuditCommand} from "./postgres.ts";
 import {createManagerReviewAuditCommand} from "./manager-review-audit.ts";
+import {ManagerReviewCredentialsError} from "./manager-review-credentials.ts";
 import {
   managerDocumentEvidenceSetDigest,
   type ManagerDocumentEvidence,
@@ -119,13 +120,17 @@ export async function handleListManagerReviews(
       metadata: {count: items.length},
     });
     return {status: 200, body: {items}};
-  } catch {
+  } catch (error) {
     await recordFailedAudit(dependencies, authorization.actor.id, {
       action: "VIEW",
       resourceType: "MANAGER_REVIEW_LIST",
       resourceId: "all",
       reason: "",
     });
+    if (error instanceof ManagerReviewCredentialsError) {
+      return failure(503, "manager_reviews_credentials_unavailable",
+        "매니저 심사 목록의 서버 인증 설정이 준비되지 않았습니다. 운영 담당자에게 연결 설정 확인을 요청해 주세요.");
+    }
     return failure(503, "manager_reviews_lookup_failed", "매니저 심사 목록을 불러오지 못했습니다.");
   }
 }
